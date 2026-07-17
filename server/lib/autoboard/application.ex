@@ -11,7 +11,12 @@ defmodule Autoboard.Application do
       Autoboard.Repo,
       {Registry, keys: :duplicate, name: Autoboard.Activity.Registry},
       Autoboard.Attachments.Cleanup,
-      {Autoboard.RPC.Listener, name: Autoboard.RPC.Listener}
+      {Autoboard.RPC.Listener, name: Autoboard.RPC.Listener},
+      {Bandit,
+       plug: AutoboardWeb.Router,
+       scheme: :http,
+       ip: Application.fetch_env!(:autoboard, :http_ip),
+       port: Application.fetch_env!(:autoboard, :http_port)}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

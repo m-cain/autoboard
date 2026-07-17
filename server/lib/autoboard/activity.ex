@@ -86,4 +86,27 @@ defmodule Autoboard.Activity do
   end
 
   def replay_after(_ctx, _activity_id), do: {:error, :unauthorized}
+
+  @spec high_water(Context.t()) :: {:ok, non_neg_integer()} | {:error, :unauthorized}
+  def high_water(%Context{scope: :global, actor: actor}) when actor in [:me, :codex] do
+    {:ok, Repo.aggregate(Event, :max, :id) || 0}
+  end
+
+  def high_water(_ctx), do: {:error, :unauthorized}
+
+  @spec replay_between(Context.t(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, [Event.t()]} | {:error, :unauthorized}
+  def replay_between(%Context{scope: :global, actor: actor}, lower, upper)
+      when actor in [:me, :codex] and is_integer(lower) and lower >= 0 and is_integer(upper) and
+             upper >= lower do
+    {:ok,
+     Repo.all(
+       from(event in Event,
+         where: event.id > ^lower and event.id <= ^upper,
+         order_by: [asc: event.id]
+       )
+     )}
+  end
+
+  def replay_between(_ctx, _lower, _upper), do: {:error, :unauthorized}
 end
