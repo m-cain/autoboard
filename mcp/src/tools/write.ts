@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { Project, TicketSummary } from "@autoboard/contracts"
 import { z } from "zod"
-import { boundedReference, boundedRevision, boundedText, projectOutputSchema, ticketOutputSchema, attachmentOutputSchema, type ToolSpec } from "./read.js"
+import { boundedReference, boundedRevision, boundedText, projectOutputSchema, ticketOutputSchema, type ToolSpec } from "./read.js"
 
 const write = (destructiveHint = false) => ({ readOnlyHint: false, destructiveHint, openWorldHint: false } as const)
 const optionalDescription = z.string().max(100_000)
@@ -12,7 +12,10 @@ const status = z.enum(["triage", "backlog", "ready", "in_progress", "done", "can
 const commentOutput = z.object({
   id: z.string(), ticket_id: z.string(), project_id: z.string(), body: z.string(), actor: z.enum(["me", "codex", "system"]), inserted_at: z.string(), ticket_revision: boundedRevision,
 }).strict()
-const attachmentWriteOutput = attachmentOutputSchema.extend({ ticket_revision: boundedRevision }).strict()
+const attachmentWriteOutput = z.object({
+  id: z.string(), ticket_id: z.string(), project_id: z.string(), original_filename: z.string(), media_type: z.string(),
+  byte_size: z.number().int().nonnegative(), sha256: z.string(), actor: z.enum(["me", "codex", "system"]), inserted_at: z.string(), ticket_revision: boundedRevision,
+}).strict()
 const commentResult = Schema.Struct({ id: Schema.String, ticket_id: Schema.String, project_id: Schema.String, body: Schema.String, actor: Schema.Literal("me", "codex", "system"), inserted_at: Schema.String, ticket_revision: Schema.Number })
 const attachmentResult = Schema.Struct({
   id: Schema.String, ticket_id: Schema.String, project_id: Schema.String, original_filename: Schema.String,

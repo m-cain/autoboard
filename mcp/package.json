@@ -6,7 +6,8 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsc -b"
+    "build": "pnpm --filter @autoboard/contracts build && tsc -b",
+    "probe:entrypoint": "pnpm --filter @autoboard/contracts build && tsc -b && node scripts/probe-entrypoint.mjs"
   },
   "dependencies": {
     "@autoboard/contracts": "workspace:*",

@@ -1,5 +1,6 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { RpcClient } from "./rpc-client.js"
+import { createCloseOnce, createSignalShutdown } from "./lifecycle.js"
 import { createMcpServer } from "./server.js"
 
 const socketPath = process.env.AUTOBOARD_SOCKET
@@ -15,21 +16,8 @@ if (!socketPath || !token) {
   await server.connect(transport)
   console.error("Autoboard MCP server connected")
 
-  let closing = false
-  const close = async () => {
-    if (closing) return
-    closing = true
-    try {
-      await server.close()
-      await client.close()
-    } catch (error) {
-      console.error(`Autoboard MCP shutdown failed: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  const shutdown = async () => {
-    await close()
-    process.exit(0)
-  }
+  const close = createCloseOnce(server, client)
+  const shutdown = createSignalShutdown(close, (code) => process.exit(code), (message) => console.error(message))
   process.once("SIGINT", () => void shutdown())
   process.once("SIGTERM", () => void shutdown())
 }

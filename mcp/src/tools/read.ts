@@ -97,7 +97,7 @@ export const readTools: ToolSpec[] = [
     outputSchema: ticketDetailOutput, annotations: readAnnotations, rpcMethod: "tickets.get", mode: "read", resultSchema: TicketDetail,
   },
   {
-    name: "list_actionable_tickets", description: "List ready, unblocked tickets assigned to Codex; tickets assigned to me are excluded.", inputSchema: z.object({ project_id: ref.optional(), limit: limit.default(25) }).strict(),
+    name: "list_actionable_tickets", description: "List ready, unblocked tickets assigned to codex; tickets assigned to `me` and tickets with non-terminal subtasks are excluded.", inputSchema: z.object({ project_id: ref.optional(), limit: limit.default(25) }).strict(),
     outputSchema: z.object({ tickets: z.array(ticketSummaryOutput) }).strict(), annotations: readAnnotations, rpcMethod: "tickets.actionable", mode: "read", resultSchema: ticketList,
   },
   {
