@@ -136,23 +136,34 @@ describe("Autoboard MCP to browser acceptance", () => {
     await page.getByRole("link", { name: "note.txt" }).waitFor({ state: "visible" })
     expect(await page.locator("form, input, textarea, select, button, [contenteditable=true], [draggable=true]").count()).toBe(0)
 
-    // Restart every live boundary and prove the canonical history survives each restart.
+    // Restart the browser first, then keep its board EventSource alive across the
+    // server restart so the delayed reconnect has to replay missed activity.
     await restartBrowser()
+    const replayApiMethods: string[] = []
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.startsWith("/api/v1")) replayApiMethods.push(request.method())
+    })
+    await page.goto(`${baseUrl}/projects/AUTO`, { waitUntil: "domcontentloaded" })
+    await page.getByText("Codex leaf", { exact: true }).waitFor({ state: "visible" })
+    let blockSseReconnect = false
+    await page.route("**/api/v1/events**", (route) => blockSseReconnect ? route.abort() : route.continue())
+    const beforeTransitionUrl = page.url()
+    let mainFrameNavigations = 0
+    page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) mainFrameNavigations += 1 })
+    await page.evaluate(() => { window.name = "autoboard-e2e-live-marker" })
+
     await restartMcp()
+    blockSseReconnect = true
     await restartServer()
     await restartMcp()
     const persisted = await tool<{ comments: Array<{ body: string }>; attachments: Array<{ original_filename: string }>; activity: unknown[] }>("get_ticket", { ticket_id: subtask.id })
     expect(persisted).toMatchObject({ comments: [{ body: "A durable **MCP** comment." }], attachments: [{ original_filename: "note.txt" }] })
     expect(persisted.activity.length).toBeGreaterThan(0)
 
-    await page.goto(`${baseUrl}/projects/AUTO`, { waitUntil: "domcontentloaded" })
-    await page.getByText("Codex leaf", { exact: true }).waitFor({ state: "visible" })
-    const beforeTransitionUrl = page.url()
-    let mainFrameNavigations = 0
-    page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) mainFrameNavigations += 1 })
-    await page.evaluate(() => { window.name = "autoboard-e2e-live-marker" })
     const freshCodex = await tool<Ticket>("get_ticket", { ticket_id: codex.id })
     const inProgress = await tool<Ticket>("transition_ticket", { ticket_id: freshCodex.id, expected_revision: freshCodex.revision, status: "in_progress" })
+    expect(await page.getByRole("region", { name: "Ready tickets" }).getByText("Codex leaf", { exact: true }).count()).toBe(1)
+    blockSseReconnect = false
     await page.getByRole("region", { name: "In progress tickets" }).getByText("Codex leaf", { exact: true }).waitFor({ state: "visible" })
     expect(page.url()).toBe(beforeTransitionUrl)
     expect(await page.evaluate(() => window.name)).toBe("autoboard-e2e-live-marker")
@@ -162,5 +173,7 @@ describe("Autoboard MCP to browser acceptance", () => {
     expect(mainFrameNavigations).toBe(0)
     expect(apiMethods.length).toBeGreaterThan(0)
     expect(apiMethods.every((method) => method === "GET")).toBe(true)
+    expect(replayApiMethods.length).toBeGreaterThan(0)
+    expect(replayApiMethods.every((method) => method === "GET")).toBe(true)
   })
 })

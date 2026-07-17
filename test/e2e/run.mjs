@@ -91,10 +91,9 @@ const acquireLock = async () => {
     try { record = JSON.parse(await readFile(join(lockPath, "owner.json"), "utf8")) } catch {
       throw new Error(`Autoboard e2e lock is present but untrusted: ${lockPath}. Remove it manually after verifying no runner is active.`)
     }
-    if (typeof record?.pid === "number" && isRunning(record.pid)) throw new Error(`Another Autoboard e2e runner owns ${lockPath}; refusing before ecto.reset.`)
     if (typeof record?.pid !== "number") throw new Error(`Autoboard e2e lock is malformed: ${lockPath}. Remove it manually after verifying no runner is active.`)
-    await rm(lockPath, { recursive: true, force: true })
-    await mkdir(lockPath, { mode: 0o700 })
+    if (isRunning(record.pid)) throw new Error(`Another Autoboard e2e runner owns ${lockPath}; refusing before ecto.reset.`)
+    throw new Error(`Autoboard e2e lock is stale: ${lockPath}. Remove it manually after verifying no runner is active.`)
   }
   await writeFile(join(lockPath, "owner.json"), JSON.stringify({ pid: process.pid, nonce: lockNonce }), { mode: 0o600 })
   ownsLock = true

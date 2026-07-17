@@ -1,6 +1,7 @@
 import Config
 
-data_dir = Path.expand("var", File.cwd!())
+data_dir = System.get_env("AUTOBOARD_DATA_DIR") || Path.expand("var", File.cwd!())
+socket_path = System.get_env("AUTOBOARD_SOCKET") || Path.join(data_dir, "autoboard.sock")
 
 database_url =
   System.get_env("DATABASE_URL") ||
@@ -13,7 +14,7 @@ config :autoboard,
   http_ip: {127, 0, 0, 1},
   http_port: 4040,
   max_attachment_bytes: 52_428_800,
-  socket_path: Path.join(data_dir, "autoboard.sock")
+  socket_path: socket_path
 
 config :autoboard, Autoboard.Repo, url: database_url
 

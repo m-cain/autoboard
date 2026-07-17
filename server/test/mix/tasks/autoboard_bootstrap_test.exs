@@ -68,4 +68,42 @@ defmodule Mix.Tasks.AutoboardBootstrapTest do
       Mix.Tasks.Autoboard.Token.Create.run(["--actor", "me", "--actor", "codex"])
     end
   end
+
+  test "setup subprocess honors explicit data and socket environment" do
+    data_dir =
+      Path.join(System.tmp_dir!(), "autoboard-setup-env-#{System.unique_integer([:positive])}")
+
+    socket_path = Path.join(data_dir, "private.sock")
+
+    on_exit(fn -> File.rm_rf(data_dir) end)
+
+    environment = [
+      {"MIX_ENV", "dev"},
+      {"DATABASE_URL", "ecto://autoboard:autoboard@localhost/autoboard_e2e"},
+      {"AUTOBOARD_DATA_DIR", data_dir},
+      {"AUTOBOARD_SOCKET", socket_path},
+      {"AUTOBOARD_HTTP_PORT", "0"}
+    ]
+
+    {_output, 0} = System.cmd("mix", ["autoboard.setup"], cd: File.cwd!(), env: environment)
+
+    for path <- [
+          data_dir,
+          Path.join(data_dir, "attachments"),
+          Path.join(data_dir, "attachments/tmp")
+        ] do
+      assert {:ok, stat} = File.stat(path)
+      assert (stat.mode &&& 0o777) == 0o700
+    end
+
+    {output, 0} =
+      System.cmd(
+        "mix",
+        ["run", "-e", "IO.write(Application.fetch_env!(:autoboard, :socket_path))"],
+        cd: File.cwd!(),
+        env: environment
+      )
+
+    assert String.ends_with?(output, socket_path)
+  end
 end
