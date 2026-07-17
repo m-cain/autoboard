@@ -67,6 +67,51 @@ defmodule Autoboard.ProjectsTest do
     assert Repo.aggregate(Event, :count) == 0
   end
 
+  test "create and update validate non-map attrs", %{ctx: ctx} do
+    project = project_fixture(ctx)
+
+    for attrs <- [nil, []] do
+      assert_invalid_attrs(Projects.create(ctx, attrs))
+      assert_invalid_attrs(Projects.update(ctx, project.id, project.revision, attrs))
+    end
+
+    assert_unchanged_project(ctx, project)
+  end
+
+  test "project mutations require positive integer revisions", %{ctx: ctx} do
+    project = project_fixture(ctx)
+
+    operations = [
+      fn revision -> Projects.update(ctx, project.id, revision, %{name: "Renamed"}) end,
+      fn revision -> Projects.archive(ctx, project.id, revision) end,
+      fn revision -> Projects.restore(ctx, project.id, revision) end
+    ]
+
+    for operation <- operations, revision <- ["1", 0, -1] do
+      assert_invalid_revision(operation.(revision))
+    end
+
+    assert_unchanged_project(ctx, project)
+  end
+
+  test "invalid contexts take precedence over public command argument validation" do
+    invalid_ctx = %Context{actor: :system, scope: :global}
+
+    operations = [
+      fn -> Projects.create(invalid_ctx, []) end,
+      fn -> Projects.update(invalid_ctx, "not-a-uuid", "1", []) end,
+      fn -> Projects.archive(invalid_ctx, "not-a-uuid", "1") end,
+      fn -> Projects.restore(invalid_ctx, "not-a-uuid", "1") end
+    ]
+
+    for operation <- operations do
+      assert {:error, %Error{kind: :unauthorized}} = operation.()
+    end
+
+    assert Repo.aggregate(Project, :count) == 0
+    assert Repo.aggregate(Event, :count) == 0
+  end
+
   test "unsupported project updates roll back state and activity", %{ctx: ctx} do
     project = project_fixture(ctx)
 
@@ -163,6 +208,16 @@ defmodule Autoboard.ProjectsTest do
     end
   end
 
+  test "project key validation describes the two-character minimum", %{ctx: ctx} do
+    assert {:error,
+            %Error{
+              kind: :validation_failed,
+              fields: %{
+                key: ["must be 2-8 uppercase alphanumeric characters and begin with a letter"]
+              }
+            }} = Projects.create(ctx, %{key: "A", name: "Autoboard", description: ""})
+  end
+
   defp project_fixture(ctx, overrides \\ %{}) do
     assert {:ok, project} =
              Projects.create(
@@ -197,5 +252,14 @@ defmodule Autoboard.ProjectsTest do
 
   defp assert_invalid_project_id(result) do
     assert {:error, %Error{kind: :validation_failed, fields: %{id: [_message]}}} = result
+  end
+
+  defp assert_invalid_attrs(result) do
+    assert {:error, %Error{kind: :validation_failed, fields: %{attrs: [_message]}}} = result
+  end
+
+  defp assert_invalid_revision(result) do
+    assert {:error, %Error{kind: :validation_failed, fields: %{expected_revision: [_message]}}} =
+             result
   end
 end

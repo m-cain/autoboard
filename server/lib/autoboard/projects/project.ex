@@ -65,7 +65,7 @@ defmodule Autoboard.Projects.Project do
 
   defp validate_key(changeset) do
     validate_format(changeset, :key, ~r/^[A-Z][A-Z0-9]{1,7}$/,
-      message: "must be 1-8 uppercase alphanumeric characters and begin with a letter"
+      message: "must be 2-8 uppercase alphanumeric characters and begin with a letter"
     )
   end
 

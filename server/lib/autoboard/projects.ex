@@ -10,8 +10,9 @@ defmodule Autoboard.Projects do
   @type result(value) :: {:ok, value} | {:error, Error.t()}
 
   @spec create(Context.t(), map()) :: result(Project.t())
-  def create(%Context{} = ctx, attrs) when is_map(attrs) do
+  def create(%Context{} = ctx, attrs) do
     with :ok <- authorize(ctx),
+         :ok <- validate_attrs(attrs),
          {:ok, {project, _events}} <-
            Repo.transaction(fn ->
              with {:ok, project} <- Repo.insert(Project.create_changeset(%Project{}, attrs)),
@@ -33,9 +34,11 @@ defmodule Autoboard.Projects do
   def create(_ctx, _attrs), do: unauthorized()
 
   @spec update(Context.t(), Ecto.UUID.t(), pos_integer(), map()) :: result(Project.t())
-  def update(%Context{} = ctx, id, expected_revision, attrs)
-      when is_integer(expected_revision) and is_map(attrs) do
-    with {:ok, id} <- cast_project_id(id) do
+  def update(%Context{} = ctx, id, expected_revision, attrs) do
+    with :ok <- authorize(ctx),
+         {:ok, id} <- cast_project_id(id),
+         :ok <- validate_expected_revision(expected_revision),
+         :ok <- validate_attrs(attrs) do
       mutate(
         ctx,
         id,
@@ -53,8 +56,10 @@ defmodule Autoboard.Projects do
   def update(_ctx, _id, _expected_revision, _attrs), do: unauthorized()
 
   @spec archive(Context.t(), Ecto.UUID.t(), pos_integer()) :: result(Project.t())
-  def archive(%Context{} = ctx, id, expected_revision) when is_integer(expected_revision) do
-    with {:ok, id} <- cast_project_id(id) do
+  def archive(%Context{} = ctx, id, expected_revision) do
+    with :ok <- authorize(ctx),
+         {:ok, id} <- cast_project_id(id),
+         :ok <- validate_expected_revision(expected_revision) do
       mutate(
         ctx,
         id,
@@ -72,9 +77,10 @@ defmodule Autoboard.Projects do
   def archive(_ctx, _id, _expected_revision), do: unauthorized()
 
   @spec restore(Context.t(), Ecto.UUID.t(), pos_integer()) :: result(Project.t())
-  def restore(%Context{} = ctx, id, expected_revision) when is_integer(expected_revision) do
+  def restore(%Context{} = ctx, id, expected_revision) do
     with :ok <- authorize(ctx),
          {:ok, id} <- cast_project_id(id),
+         :ok <- validate_expected_revision(expected_revision),
          {:ok, {project, _events}} <-
            Repo.transaction(fn ->
              project = locked_project(id)
@@ -153,8 +159,7 @@ defmodule Autoboard.Projects do
          payload_fun,
          require_active? \\ true
        ) do
-    with :ok <- authorize(ctx),
-         {:ok, {project, _events}} <-
+    with {:ok, {project, _events}} <-
            Repo.transaction(fn ->
              project = locked_project(id)
 
@@ -193,6 +198,24 @@ defmodule Autoboard.Projects do
       {:ok, id} -> {:ok, id}
       :error -> invalid_project_id()
     end
+  end
+
+  defp validate_attrs(attrs) when is_map(attrs), do: :ok
+  defp validate_attrs(_attrs), do: invalid_argument(:attrs, "must be a map")
+
+  defp validate_expected_revision(revision) when is_integer(revision) and revision > 0, do: :ok
+
+  defp validate_expected_revision(_revision) do
+    invalid_argument(:expected_revision, "must be a positive integer")
+  end
+
+  defp invalid_argument(field, message) do
+    {:error,
+     %Error{
+       kind: :validation_failed,
+       message: "project validation failed",
+       fields: %{field => [message]}
+     }}
   end
 
   defp invalid_project_id do
