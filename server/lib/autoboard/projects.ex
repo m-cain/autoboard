@@ -34,44 +34,47 @@ defmodule Autoboard.Projects do
 
   @spec update(Context.t(), Ecto.UUID.t(), pos_integer(), map()) :: result(Project.t())
   def update(%Context{} = ctx, id, expected_revision, attrs)
-      when is_binary(id) and is_integer(expected_revision) and is_map(attrs) do
-    mutate(
-      ctx,
-      id,
-      expected_revision,
-      "project.updated",
-      attrs,
-      &Project.update_changeset/2,
-      fn project, changeset, _updated ->
-        changed_field_payload(project, changeset, [:name, :description])
-      end
-    )
+      when is_integer(expected_revision) and is_map(attrs) do
+    with {:ok, id} <- cast_project_id(id) do
+      mutate(
+        ctx,
+        id,
+        expected_revision,
+        "project.updated",
+        attrs,
+        &Project.update_changeset/2,
+        fn project, changeset, _updated ->
+          changed_field_payload(project, changeset, [:name, :description])
+        end
+      )
+    end
   end
 
   def update(_ctx, _id, _expected_revision, _attrs), do: unauthorized()
 
   @spec archive(Context.t(), Ecto.UUID.t(), pos_integer()) :: result(Project.t())
-  def archive(%Context{} = ctx, id, expected_revision)
-      when is_binary(id) and is_integer(expected_revision) do
-    mutate(
-      ctx,
-      id,
-      expected_revision,
-      "project.archived",
-      :archive,
-      fn project, _attrs -> Project.state_changeset(project, :archived) end,
-      fn project, _changeset, _updated ->
-        state_payload(project.state, :archived)
-      end
-    )
+  def archive(%Context{} = ctx, id, expected_revision) when is_integer(expected_revision) do
+    with {:ok, id} <- cast_project_id(id) do
+      mutate(
+        ctx,
+        id,
+        expected_revision,
+        "project.archived",
+        :archive,
+        fn project, _attrs -> Project.state_changeset(project, :archived) end,
+        fn project, _changeset, _updated ->
+          state_payload(project.state, :archived)
+        end
+      )
+    end
   end
 
   def archive(_ctx, _id, _expected_revision), do: unauthorized()
 
   @spec restore(Context.t(), Ecto.UUID.t(), pos_integer()) :: result(Project.t())
-  def restore(%Context{} = ctx, id, expected_revision)
-      when is_binary(id) and is_integer(expected_revision) do
+  def restore(%Context{} = ctx, id, expected_revision) when is_integer(expected_revision) do
     with :ok <- authorize(ctx),
+         {:ok, id} <- cast_project_id(id),
          {:ok, {project, _events}} <-
            Repo.transaction(fn ->
              project = locked_project(id)
@@ -117,8 +120,9 @@ defmodule Autoboard.Projects do
   def list(_ctx), do: unauthorized()
 
   @spec fetch(Context.t(), Ecto.UUID.t()) :: result(Project.t())
-  def fetch(%Context{} = ctx, id) when is_binary(id) do
-    with :ok <- authorize(ctx) do
+  def fetch(%Context{} = ctx, id) do
+    with :ok <- authorize(ctx),
+         {:ok, id} <- cast_project_id(id) do
       Project
       |> Repo.get(id)
       |> require_project()
@@ -182,6 +186,22 @@ defmodule Autoboard.Projects do
 
   defp locked_project(id) do
     Repo.one(from(project in Project, where: project.id == ^id, lock: "FOR UPDATE"))
+  end
+
+  defp cast_project_id(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, id} -> {:ok, id}
+      :error -> invalid_project_id()
+    end
+  end
+
+  defp invalid_project_id do
+    {:error,
+     %Error{
+       kind: :validation_failed,
+       message: "project validation failed",
+       fields: %{id: ["must be a valid UUID"]}
+     }}
   end
 
   defp require_project(nil), do: {:error, %Error{kind: :not_found, message: "project not found"}}

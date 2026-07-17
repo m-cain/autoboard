@@ -7,6 +7,7 @@ defmodule Autoboard.ProjectsTest do
   alias Autoboard.Auth.Context
   alias Autoboard.Domain.Error
   alias Autoboard.Projects
+  alias Autoboard.Projects.Project
   alias Autoboard.Repo
 
   setup do
@@ -30,6 +31,40 @@ defmodule Autoboard.ProjectsTest do
 
     assert {:error, %Error{kind: :revision_conflict, current: ^updated}} =
              Projects.archive(ctx, project.id, 1)
+  end
+
+  test "fetch rejects malformed project IDs", %{ctx: ctx} do
+    assert_invalid_project_id(Projects.fetch(ctx, "not-a-uuid"))
+  end
+
+  test "update rejects malformed project IDs", %{ctx: ctx} do
+    assert_invalid_project_id(Projects.update(ctx, "not-a-uuid", 1, %{name: "Renamed"}))
+  end
+
+  test "archive rejects malformed project IDs", %{ctx: ctx} do
+    assert_invalid_project_id(Projects.archive(ctx, "not-a-uuid", 1))
+  end
+
+  test "restore rejects malformed project IDs", %{ctx: ctx} do
+    assert_invalid_project_id(Projects.restore(ctx, "not-a-uuid", 1))
+  end
+
+  test "project creation rejects protected and unknown attributes atomically", %{ctx: ctx} do
+    for extra_attrs <- [
+          %{state: :archived},
+          %{revision: 99},
+          %{next_ticket_number: 99},
+          %{unexpected: "value"}
+        ] do
+      assert {:error, %Error{kind: :validation_failed}} =
+               Projects.create(
+                 ctx,
+                 Map.merge(%{key: "AUTO", name: "Autoboard", description: ""}, extra_attrs)
+               )
+    end
+
+    assert Repo.aggregate(Project, :count) == 0
+    assert Repo.aggregate(Event, :count) == 0
   end
 
   test "unsupported project updates roll back state and activity", %{ctx: ctx} do
@@ -158,5 +193,9 @@ defmodule Autoboard.ProjectsTest do
     assert unchanged.name == project.name
     assert unchanged.description == project.description
     assert event_count(project.id) == 1
+  end
+
+  defp assert_invalid_project_id(result) do
+    assert {:error, %Error{kind: :validation_failed, fields: %{id: [_message]}}} = result
   end
 end

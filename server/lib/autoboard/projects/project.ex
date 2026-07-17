@@ -23,6 +23,7 @@ defmodule Autoboard.Projects.Project do
 
     project
     |> cast(attrs, [:key, :name, :description])
+    |> reject_unsupported_create_fields(attrs)
     |> validate_required([:key, :name])
     |> validate_key()
     |> validate_name()
@@ -93,6 +94,19 @@ defmodule Autoboard.Projects.Project do
       end
     end)
   end
+
+  defp reject_unsupported_create_fields(changeset, attrs) do
+    Enum.reduce(attrs, changeset, fn {field, _value}, changeset ->
+      case create_field(field) do
+        :allowed -> changeset
+        :base -> add_error(changeset, :base, "#{inspect(field)} is not allowed")
+        field when is_atom(field) -> add_error(changeset, field, "is not allowed")
+      end
+    end)
+  end
+
+  defp create_field(field) when field in [:key, "key"], do: :allowed
+  defp create_field(field), do: update_field(field)
 
   defp update_field(field) when field in [:name, :description, "name", "description"],
     do: :allowed
