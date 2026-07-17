@@ -1,5 +1,6 @@
 import { createConnection, type Socket } from "node:net"
 import { Schema } from "effect"
+import { SessionInitialize } from "@autoboard/contracts"
 import { IndeterminateWriteError, RpcConnectionError, RpcError, RpcProtocolError } from "./rpc-error.js"
 
 const MAX_FRAME_BYTES = 4 * 1024 * 1024
@@ -18,7 +19,7 @@ type Pending = {
 }
 
 type InitializePending = {
-  resolve: () => void
+  resolve: (session: Schema.Schema.Type<typeof SessionInitialize>) => void
   reject: (error: Error) => void
 }
 
@@ -35,6 +36,7 @@ export type RpcClientOptions = {
  */
 export class RpcClient {
   private socket: Socket | undefined
+  private opening: Socket | undefined
   private receiveBuffer = Buffer.alloc(0)
   private nextId = 1
   private readonly pending = new Map<JsonRpcId, Pending>()
@@ -61,13 +63,13 @@ export class RpcClient {
     params: Record<string, unknown>,
     schema: S,
     mode: Mode,
-  ): Promise<Schema.Schema.Encoded<S>> {
+  ): Promise<Schema.Schema.Type<S>> {
     if (this.closed) throw new RpcConnectionError("RPC client is closed")
     if (this.failed) throw this.failed
     if (this.recovery) await this.recovery
     if (!this.socket) throw this.failed ?? new RpcConnectionError("RPC client is disconnected")
 
-    return new Promise<Schema.Schema.Encoded<S>>((resolve, reject) => {
+    return new Promise<Schema.Schema.Type<S>>((resolve, reject) => {
       const id = this.allocateId()
       const pending: Pending = {
         id,
@@ -75,7 +77,7 @@ export class RpcClient {
         params,
         schema,
         mode,
-        resolve: (value) => resolve(value as Schema.Schema.Encoded<S>),
+        resolve: (value) => resolve(value as Schema.Schema.Type<S>),
         reject,
       }
       this.pending.set(id, pending)
@@ -92,7 +94,11 @@ export class RpcClient {
     if (this.closed) return
     this.closed = true
     const error = new RpcConnectionError("RPC client is closed")
+    this.failed = error
+    this.rejectInitializing(error)
     this.rejectAll(error)
+    this.opening?.destroy()
+    this.opening = undefined
     this.socket?.destroy()
     this.socket = undefined
   }
@@ -117,13 +123,21 @@ export class RpcClient {
   private openSocket(): Promise<Socket> {
     return new Promise((resolve, reject) => {
       const socket = createConnection(this.options.socketPath)
+      this.opening = socket
       const onError = (error: Error) => {
         cleanup()
+        if (this.opening === socket) this.opening = undefined
         socket.destroy()
         reject(new RpcConnectionError(`Unable to connect to RPC socket: ${error.message}`))
       }
       const onConnect = () => {
         cleanup()
+        if (this.opening === socket) this.opening = undefined
+        if (this.closed) {
+          socket.destroy()
+          reject(new RpcConnectionError("RPC client is closed"))
+          return
+        }
         socket.on("data", (chunk: Buffer) => this.receive(socket, chunk))
         socket.on("close", () => this.disconnected(socket))
         socket.on("error", () => undefined)
@@ -138,9 +152,9 @@ export class RpcClient {
     })
   }
 
-  private initialize(): Promise<void> {
+  private initialize(): Promise<Schema.Schema.Type<typeof SessionInitialize>> {
     const id = this.allocateId()
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<Schema.Schema.Type<typeof SessionInitialize>>((resolve, reject) => {
       this.initializing.set(id, { resolve, reject })
       try {
         this.write({
@@ -217,8 +231,17 @@ export class RpcClient {
     if (initializing) {
       this.initializing.delete(id)
       if ("error" in message) initializing.reject(this.asRpcError(message.error))
-      else if (message.jsonrpc === "2.0" && "result" in message) initializing.resolve()
-      else initializing.reject(new RpcProtocolError("Invalid session.initialize response"))
+      else if (message.jsonrpc === "2.0" && "result" in message) {
+        try {
+          initializing.resolve(
+            Schema.decodeUnknownSync(
+              SessionInitialize as unknown as Schema.Schema<Schema.Schema.Type<typeof SessionInitialize>, unknown, never>,
+            )(message.result),
+          )
+        } catch (error) {
+          initializing.reject(new RpcProtocolError(`Invalid session.initialize response: ${String(error)}`))
+        }
+      } else initializing.reject(new RpcProtocolError("Invalid session.initialize response"))
       return
     }
 
@@ -262,8 +285,7 @@ export class RpcClient {
     if (socket !== this.socket || this.closed) return
     this.socket = undefined
     const initializationError = new RpcConnectionError("RPC connection closed during initialization")
-    for (const { reject } of this.initializing.values()) reject(initializationError)
-    this.initializing.clear()
+    this.rejectInitializing(initializationError)
 
     if (this.isInitializing) return
     this.disconnects += 1
@@ -290,6 +312,7 @@ export class RpcClient {
   private async reconnect(): Promise<void> {
     try {
       await this.establish()
+      if (this.closed) return
       for (const pending of [...this.pending.values()]) {
         this.pending.delete(pending.id)
         pending.id = this.allocateId()
@@ -299,15 +322,21 @@ export class RpcClient {
     } catch (error) {
       this.disconnects = 2
       const failure = error instanceof Error ? error : new RpcConnectionError("RPC reconnection failed")
-      this.failed = failure
-      this.rejectAll(failure)
-      throw failure
+      if (!this.closed) {
+        this.failed = failure
+        this.rejectAll(failure)
+      }
     }
   }
 
   private rejectAll(error: Error): void {
     for (const pending of this.pending.values()) pending.reject(error)
     this.pending.clear()
+  }
+
+  private rejectInitializing(error: Error): void {
+    for (const { reject } of this.initializing.values()) reject(error)
+    this.initializing.clear()
   }
 
   private allocateId(): number {

@@ -54,7 +54,16 @@ const startServer = async (handler: (request: Request, socket: Socket) => void):
 
 const initialized = (request: Request, socket: Socket) => {
   if (request.method === "session.initialize") {
-    socket.write(frame({ jsonrpc: "2.0", id: request.id, result: { protocol_version: 1, actor: "codex" } }))
+    socket.write(frame({
+      jsonrpc: "2.0",
+      id: request.id,
+      result: {
+        protocol_version: 1,
+        server_version: "0.1.0",
+        actor: "codex",
+        authorization: { kind: "global" },
+      },
+    }))
     return true
   }
   return false
@@ -104,6 +113,16 @@ describe("RpcClient", () => {
 
     await expect(client.call("tickets.update", {}, Schema.Unknown, "write")).rejects.toBeInstanceOf(RpcError)
     await client.close()
+  })
+
+  test("rejects malformed or incompatible session initialization responses", async () => {
+    const fixture = await startServer((request, socket) => {
+      if (request.method === "session.initialize") {
+        socket.write(frame({ jsonrpc: "2.0", id: request.id, result: { protocol_version: 2 } }))
+      }
+    })
+
+    await expect(RpcClient.connect({ socketPath: fixture.path, token: "token" })).rejects.toBeInstanceOf(RpcProtocolError)
   })
 
   test("rejects a result that does not decode through the caller's Effect schema", async () => {
@@ -157,6 +176,55 @@ describe("RpcClient", () => {
 
     await expect(client.call("tickets.get", {}, Schema.Unknown, "read")).rejects.toThrow("retry")
     await expect(client.call("tickets.get", {}, Schema.Unknown, "read")).rejects.toThrow("retry")
+    await client.close()
+  })
+
+  test("settles recovery without unhandled rejection when the reconnect initialization fails", async () => {
+    let initializations = 0
+    const fixture = await startServer((request, socket) => {
+      if (request.method === "session.initialize") {
+        initializations += 1
+        if (initializations === 1) initialized(request, socket)
+        else socket.destroy()
+        return
+      }
+      socket.destroy()
+    })
+    const client = await RpcClient.connect({ socketPath: fixture.path, token: "token" })
+    const unhandled = new Promise<unknown>((resolve) => process.once("unhandledRejection", resolve))
+
+    await expect(client.call("tickets.get", {}, Schema.Unknown, "read")).rejects.toBeInstanceOf(Error)
+    await expect(Promise.race([unhandled, new Promise((resolve) => setTimeout(resolve, 25))])).resolves.toBeUndefined()
+    await expect(client.call("tickets.get", {}, Schema.Unknown, "read")).rejects.toBeInstanceOf(Error)
+    await client.close()
+  })
+
+  test("close cancels an in-flight reconnect initialization and settles waiting calls", async () => {
+    let initializations = 0
+    const fixture = await startServer((request, socket) => {
+      if (request.method === "session.initialize") {
+        initializations += 1
+        if (initializations === 1) initialized(request, socket)
+        return
+      }
+      socket.destroy()
+    })
+    const client = await RpcClient.connect({ socketPath: fixture.path, token: "token" })
+    const read = client.call("tickets.get", {}, Schema.Unknown, "read")
+
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await client.close()
+    await expect(read).rejects.toThrow("closed")
+  })
+
+  test("returns the decoded Type of transforming Effect schemas", async () => {
+    const fixture = await startServer((request, socket) => {
+      if (initialized(request, socket)) return
+      socket.write(frame({ jsonrpc: "2.0", id: request.id, result: "42" }))
+    })
+    const client = await RpcClient.connect({ socketPath: fixture.path, token: "token" })
+
+    await expect(client.call("tickets.get", {}, Schema.NumberFromString, "read")).resolves.toBe(42)
     await client.close()
   })
 

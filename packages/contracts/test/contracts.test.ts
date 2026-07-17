@@ -7,6 +7,7 @@ import {
   Attachment,
   AttachmentRpc,
   ProjectBoard,
+  RpcSuccess,
   RpcFailure,
   TicketDetail,
 } from "../src/index.js"
@@ -36,6 +37,27 @@ describe("Autoboard transport contracts", () => {
     const detail = (await fixture("ticket_detail.json")) as { revision?: number }
     const { revision: _revision, ...withoutRevision } = detail
     expect(() => Schema.decodeUnknownSync(TicketDetail)(withoutRevision)).toThrow()
+  })
+
+  test("rejects impossible UTC timestamps and unknown RPC envelope keys", async () => {
+    const board = (await fixture("project_board.json")) as { project: Record<string, unknown> }
+    expect(() => Schema.decodeUnknownSync(ProjectBoard)({
+      ...board,
+      project: { ...board.project, inserted_at: "2026-99-99Tnot-a-timeZ" },
+    })).toThrow()
+
+    expect(() => Schema.decodeUnknownSync(RpcSuccess)({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {},
+      leaked: true,
+    })).toThrow()
+  })
+
+  test("requires discriminating fields on domain errors", () => {
+    expect(() => Schema.decodeUnknownSync(RpcFailure)({ kind: "validation_failed", message: "invalid" })).toThrow()
+    expect(() => Schema.decodeUnknownSync(RpcFailure)({ kind: "revision_conflict", message: "stale" })).toThrow()
+    expect(() => Schema.decodeUnknownSync(RpcFailure)({ kind: "internal_error", message: "oops" })).toThrow()
   })
 
   test("keeps HTTP attachments exact and storage-path free", async () => {

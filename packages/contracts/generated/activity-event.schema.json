@@ -63,8 +63,8 @@
     },
     "inserted_at": {
       "type": "string",
-      "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+      "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
+      "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
     }
   },
   "additionalProperties": false
