@@ -7,6 +7,8 @@ defmodule Autoboard.Tickets do
   alias Autoboard.Projects
   alias Autoboard.Projects.Project
   alias Autoboard.Repo
+  alias Autoboard.Tickets.Dependency
+  alias Autoboard.Tickets.Graph
   alias Autoboard.Tickets.Label
   alias Autoboard.Tickets.Ticket
 
@@ -69,10 +71,10 @@ defmodule Autoboard.Tickets do
          {:ok, labels} <- normalized_labels(attrs),
          :ok <- valid_changeset(Ticket.update_changeset(%Ticket{}, attrs)) do
       Repo.transaction(fn ->
+        project = id |> ticket_project_id() |> locked_project_if_present()
         ticket = locked_ticket(id)
 
         with {:ok, ticket} <- require_ticket(ticket),
-             project = locked_project(ticket.project_id),
              {:ok, project} <- require_project(project),
              :ok <- require_revision(ticket, expected_revision),
              :ok <- Projects.ensure_active(project),
@@ -121,31 +123,33 @@ defmodule Autoboard.Tickets do
          :ok <- validate_expected_revision(expected_revision),
          {:ok, status} <- normalize_status(status) do
       Repo.transaction(fn ->
+        project = id |> ticket_project_id() |> locked_project_if_present()
         ticket = locked_ticket(id)
 
         with {:ok, ticket} <- require_ticket(ticket),
-             project = locked_project(ticket.project_id),
              {:ok, project} <- require_project(project),
              :ok <- require_revision(ticket, expected_revision),
              :ok <- Projects.ensure_active(project),
              :ok <- require_status_change(ticket, status),
-             :ok <- transition_allowed(ticket, status),
+             :ok <- transition_allowed(ctx, ticket, status),
              {:ok, updated} <- Repo.update(Ticket.transition_changeset(ticket, status)),
              updated = present(updated, project, ticket_labels(ticket)),
-             {:ok, _event} <-
+             {:ok, transition_event} <-
                Activity.append(ctx, "ticket.transitioned", project.id, updated.id, %{
                  "status" => %{
                    "from" => Atom.to_string(ticket.status),
                    "to" => Atom.to_string(status)
                  }
-               }) do
-          updated
+               }),
+             {:ok, blocking_events} <-
+               notify_directly_blocked_tickets(ctx, project, ticket, status) do
+          {updated, [transition_event | blocking_events]}
         else
           {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
           {:error, %Error{} = error} -> Repo.rollback(error)
         end
       end)
-      |> transaction_result()
+      |> transition_transaction_result()
     end
   end
 
@@ -181,6 +185,282 @@ defmodule Autoboard.Tickets do
   end
 
   def search(_ctx, _attrs), do: unauthorized()
+
+  @spec add_dependency(Context.t(), Ecto.UUID.t(), Ecto.UUID.t(), pos_integer()) ::
+          result(Ticket.t())
+  def add_dependency(%Context{} = ctx, blocked_ticket_id, blocker_ticket_id, expected_revision) do
+    with :ok <- authorize(ctx),
+         {:ok, blocked_ticket_id} <- cast_uuid(blocked_ticket_id, :blocked_ticket_id),
+         {:ok, blocker_ticket_id} <- cast_uuid(blocker_ticket_id, :blocker_ticket_id),
+         :ok <- validate_expected_revision(expected_revision) do
+      mutate_dependency(ctx, blocked_ticket_id, blocker_ticket_id, expected_revision, :add)
+    end
+  end
+
+  def add_dependency(_ctx, _blocked_ticket_id, _blocker_ticket_id, _expected_revision),
+    do: unauthorized()
+
+  @spec remove_dependency(Context.t(), Ecto.UUID.t(), Ecto.UUID.t(), pos_integer()) ::
+          result(Ticket.t())
+  def remove_dependency(%Context{} = ctx, blocked_ticket_id, blocker_ticket_id, expected_revision) do
+    with :ok <- authorize(ctx),
+         {:ok, blocked_ticket_id} <- cast_uuid(blocked_ticket_id, :blocked_ticket_id),
+         {:ok, blocker_ticket_id} <- cast_uuid(blocker_ticket_id, :blocker_ticket_id),
+         :ok <- validate_expected_revision(expected_revision) do
+      mutate_dependency(ctx, blocked_ticket_id, blocker_ticket_id, expected_revision, :remove)
+    end
+  end
+
+  def remove_dependency(_ctx, _blocked_ticket_id, _blocker_ticket_id, _expected_revision),
+    do: unauthorized()
+
+  @spec blocked?(Context.t(), Ticket.t()) :: boolean() | {:error, Error.t()}
+  def blocked?(%Context{} = ctx, %Ticket{} = ticket) do
+    with :ok <- authorize(ctx) do
+      unresolved_blocker?(ticket.id)
+    end
+  end
+
+  def blocked?(_ctx, _ticket), do: unauthorized()
+
+  @spec list_actionable(Context.t(), map()) :: [Ticket.t()] | {:error, Error.t()}
+  def list_actionable(%Context{} = ctx, attrs) do
+    with :ok <- authorize(ctx),
+         {:ok, attrs} <- canonical_actionable_attrs(attrs),
+         {:ok, project_id} <- optional_uuid(Map.get(attrs, "project_id"), :project_id),
+         {:ok, limit} <- actionable_limit(Map.get(attrs, "limit")) do
+      tickets =
+        from(ticket in Ticket, as: :ticket)
+        |> join(:inner, [ticket], project in Project, on: project.id == ticket.project_id)
+        |> where(
+          [ticket, project],
+          ticket.status == :ready and ticket.assignee == :codex and project.state == :active
+        )
+        |> maybe_filter_project(project_id)
+        |> without_unresolved_blockers()
+        |> without_non_terminal_subtasks()
+        |> order_by([ticket],
+          asc:
+            fragment(
+              "CASE ? WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END",
+              ticket.priority
+            ),
+          asc: ticket.inserted_at,
+          asc: ticket.id
+        )
+        |> limit(^limit)
+        |> Repo.all()
+        |> Enum.map(&present/1)
+
+      tickets
+    end
+  end
+
+  def list_actionable(_ctx, _attrs), do: unauthorized()
+
+  defp mutate_dependency(ctx, blocked_ticket_id, blocker_ticket_id, expected_revision, operation) do
+    Repo.transaction(fn ->
+      project = blocked_ticket_id |> ticket_project_id() |> locked_project_if_present()
+      blocked_ticket = locked_ticket(blocked_ticket_id)
+
+      with {:ok, blocked_ticket} <- require_ticket(blocked_ticket),
+           {:ok, project} <- require_project(project),
+           :ok <- require_revision(blocked_ticket, expected_revision),
+           :ok <- Projects.ensure_active(project),
+           {:ok, blocker_ticket} <- require_ticket(Repo.get(Ticket, blocker_ticket_id)),
+           :ok <- require_same_project(blocked_ticket, blocker_ticket),
+           :ok <- mutate_dependency_edge(operation, blocked_ticket, blocker_ticket, project.id),
+           {:ok, updated} <- increment_revision(blocked_ticket),
+           {:ok, event} <-
+             Activity.append(
+               ctx,
+               dependency_event_type(operation),
+               project.id,
+               updated.id,
+               %{"blocker_ticket_id" => blocker_ticket.id}
+             ) do
+        {present(updated, project, ticket_labels(updated)), [event]}
+      else
+        {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
+        {:error, %Error{} = error} -> Repo.rollback(error)
+      end
+    end)
+    |> dependency_transaction_result()
+  end
+
+  defp mutate_dependency_edge(:add, blocked_ticket, blocker_ticket, project_id) do
+    with :ok <- reject_self_dependency(blocked_ticket, blocker_ticket),
+         :ok <- reject_duplicate_dependency(blocked_ticket, blocker_ticket),
+         :ok <- reject_dependency_cycle(blocked_ticket, blocker_ticket, project_id),
+         {:ok, _dependency} <-
+           %Dependency{}
+           |> Dependency.changeset(%{
+             blocker_ticket_id: blocker_ticket.id,
+             blocked_ticket_id: blocked_ticket.id
+           })
+           |> Repo.insert() do
+      :ok
+    end
+  end
+
+  defp mutate_dependency_edge(:remove, blocked_ticket, blocker_ticket, _project_id) do
+    case Repo.get_by(Dependency,
+           blocker_ticket_id: blocker_ticket.id,
+           blocked_ticket_id: blocked_ticket.id
+         ) do
+      nil -> invalid_argument(:blocker_ticket_id, "must reference an existing dependency")
+      dependency -> Repo.delete(dependency) |> delete_dependency_result()
+    end
+  end
+
+  defp delete_dependency_result({:ok, _dependency}), do: :ok
+  defp delete_dependency_result({:error, changeset}), do: {:error, changeset}
+
+  defp reject_self_dependency(%Ticket{id: id}, %Ticket{id: id}),
+    do: invalid_argument(:blocker_ticket_id, "must not equal blocked_ticket_id")
+
+  defp reject_self_dependency(_blocked_ticket, _blocker_ticket), do: :ok
+
+  defp require_same_project(%Ticket{project_id: project_id}, %Ticket{project_id: project_id}),
+    do: :ok
+
+  defp require_same_project(_blocked_ticket, _blocker_ticket),
+    do: invalid_argument(:blocker_ticket_id, "must belong to the same project")
+
+  defp reject_duplicate_dependency(blocked_ticket, blocker_ticket) do
+    if Repo.exists?(
+         from(dependency in Dependency,
+           where:
+             dependency.blocked_ticket_id == ^blocked_ticket.id and
+               dependency.blocker_ticket_id == ^blocker_ticket.id
+         )
+       ) do
+      invalid_argument(:blocker_ticket_id, "already blocks this ticket")
+    else
+      :ok
+    end
+  end
+
+  defp reject_dependency_cycle(blocked_ticket, blocker_ticket, project_id) do
+    edges = project_dependency_edges(project_id)
+
+    if Graph.reachable?(edges, blocked_ticket.id, blocker_ticket.id) do
+      {:error,
+       %Error{
+         kind: :dependency_cycle,
+         message: "dependency would create a cycle",
+         fields: %{blocker_ticket_id: ["must not create a cycle"]}
+       }}
+    else
+      :ok
+    end
+  end
+
+  defp project_dependency_edges(project_id) do
+    Repo.all(
+      from(dependency in Dependency,
+        join: blocked_ticket in Ticket,
+        on: blocked_ticket.id == dependency.blocked_ticket_id,
+        where: blocked_ticket.project_id == ^project_id,
+        select: {dependency.blocker_ticket_id, dependency.blocked_ticket_id}
+      )
+    )
+  end
+
+  defp dependency_event_type(:add), do: "dependency.added"
+  defp dependency_event_type(:remove), do: "dependency.removed"
+
+  defp increment_revision(ticket) do
+    ticket
+    |> Ecto.Changeset.change(revision: ticket.revision + 1)
+    |> Repo.update()
+  end
+
+  defp unresolved_blocker?(ticket_id) do
+    Repo.exists?(
+      from(dependency in Dependency,
+        join: blocker in Ticket,
+        on: blocker.id == dependency.blocker_ticket_id,
+        where:
+          dependency.blocked_ticket_id == ^ticket_id and blocker.status not in [:done, :canceled]
+      )
+    )
+  end
+
+  defp without_unresolved_blockers(query) do
+    blockers =
+      from(dependency in Dependency,
+        join: blocker in Ticket,
+        on: blocker.id == dependency.blocker_ticket_id,
+        where:
+          dependency.blocked_ticket_id == parent_as(:ticket).id and
+            blocker.status not in [:done, :canceled],
+        select: 1
+      )
+
+    where(query, [_ticket], not exists(blockers))
+  end
+
+  defp without_non_terminal_subtasks(query) do
+    subtasks =
+      from(subtask in Ticket,
+        where:
+          subtask.parent_ticket_id == parent_as(:ticket).id and
+            subtask.status not in [:done, :canceled],
+        select: 1
+      )
+
+    where(query, [_ticket], not exists(subtasks))
+  end
+
+  defp notify_directly_blocked_tickets(ctx, project, ticket, status) do
+    if terminal?(ticket.status) != terminal?(status) do
+      ticket
+      |> directly_blocked_tickets()
+      |> Enum.uniq_by(& &1.id)
+      |> Enum.reduce_while({:ok, []}, fn blocked_ticket, {:ok, events} ->
+        with {:ok, updated} <- increment_revision(blocked_ticket),
+             {:ok, event} <-
+               Activity.append(
+                 ctx,
+                 "dependency.blocking_changed",
+                 project.id,
+                 updated.id,
+                 %{
+                   "blocker_ticket_id" => ticket.id,
+                   "status" => %{
+                     "from" => Atom.to_string(ticket.status),
+                     "to" => Atom.to_string(status)
+                   }
+                 }
+               ) do
+          {:cont, {:ok, [event | events]}}
+        else
+          {:error, error} -> {:halt, {:error, error}}
+        end
+      end)
+      |> case do
+        {:ok, events} -> {:ok, Enum.reverse(events)}
+        {:error, error} -> {:error, error}
+      end
+    else
+      {:ok, []}
+    end
+  end
+
+  defp directly_blocked_tickets(ticket) do
+    Repo.all(
+      from(dependency in Dependency,
+        join: blocked_ticket in Ticket,
+        on: blocked_ticket.id == dependency.blocked_ticket_id,
+        where: dependency.blocker_ticket_id == ^ticket.id,
+        lock: "FOR UPDATE",
+        select: blocked_ticket
+      )
+    )
+  end
+
+  defp terminal?(status), do: status in [:done, :canceled]
 
   defp allocate_ticket_number(project) do
     project
@@ -337,9 +617,9 @@ defmodule Autoboard.Tickets do
 
   defp require_status_change(_ticket, _status), do: :ok
 
-  defp transition_allowed(ticket, status) when status in [:done, :canceled] do
+  defp transition_allowed(ctx, ticket, status) when status in [:done, :canceled] do
     cond do
-      status == :done and blocked_by_dependency?(ticket) ->
+      status == :done and blocked?(ctx, ticket) ->
         {:error, %Error{kind: :blocked_by_dependency, message: "ticket has unresolved blockers"}}
 
       has_non_terminal_subtask?(ticket) ->
@@ -350,11 +630,7 @@ defmodule Autoboard.Tickets do
     end
   end
 
-  defp transition_allowed(_ticket, _status), do: :ok
-
-  # Task 4 replaces this extension point with the same-project dependency query.
-  defp blocked_by_dependency?(_ticket),
-    do: Application.get_env(:autoboard, :dependency_blocker, false)
+  defp transition_allowed(_ctx, _ticket, _status), do: :ok
 
   defp has_non_terminal_subtask?(ticket) do
     Repo.exists?(
@@ -415,6 +691,18 @@ defmodule Autoboard.Tickets do
   defp transaction_result({:error, %Ecto.Changeset{} = changeset}),
     do: {:error, validation_error(changeset)}
 
+  defp dependency_transaction_result({:ok, {ticket, _events}}), do: {:ok, ticket}
+  defp dependency_transaction_result({:error, %Error{} = error}), do: {:error, error}
+
+  defp dependency_transaction_result({:error, %Ecto.Changeset{} = changeset}),
+    do: {:error, validation_error(changeset)}
+
+  defp transition_transaction_result({:ok, {ticket, _events}}), do: {:ok, ticket}
+  defp transition_transaction_result({:error, %Error{} = error}), do: {:error, error}
+
+  defp transition_transaction_result({:error, %Ecto.Changeset{} = changeset}),
+    do: {:error, validation_error(changeset)}
+
   defp canonical_attrs(attrs) do
     case Ticket.canonicalize_attrs(attrs) do
       {:ok, _attrs, [_ | _] = errors} ->
@@ -445,6 +733,18 @@ defmodule Autoboard.Tickets do
     end
   end
 
+  defp canonical_actionable_attrs(attrs) do
+    with {:ok, attrs} <- canonical_attrs(attrs) do
+      unsupported = Map.keys(attrs) -- ["project_id", "limit"]
+
+      if unsupported == [] do
+        {:ok, attrs}
+      else
+        invalid_argument(:base, "#{inspect(hd(unsupported))} is not allowed")
+      end
+    end
+  end
+
   defp valid_changeset(%{valid?: true}), do: :ok
   defp valid_changeset(changeset), do: {:error, validation_error(changeset)}
 
@@ -461,6 +761,10 @@ defmodule Autoboard.Tickets do
   defp optional_query(nil), do: {:ok, nil}
   defp optional_query(value) when is_binary(value), do: {:ok, value}
   defp optional_query(_value), do: invalid_argument(:query, "must be a string")
+
+  defp actionable_limit(nil), do: {:ok, 25}
+  defp actionable_limit(limit) when is_integer(limit) and limit in 1..100, do: {:ok, limit}
+  defp actionable_limit(_limit), do: invalid_argument(:limit, "must be an integer from 1 to 100")
 
   defp normalize_status(status)
        when status in [:triage, :backlog, :ready, :in_progress, :done, :canceled],
@@ -489,8 +793,15 @@ defmodule Autoboard.Tickets do
   defp locked_project(id),
     do: Repo.one(from(project in Project, where: project.id == ^id, lock: "FOR UPDATE"))
 
+  defp locked_project_if_present(nil), do: nil
+  defp locked_project_if_present(project_id), do: locked_project(project_id)
+
   defp locked_ticket(id),
     do: Repo.one(from(ticket in Ticket, where: ticket.id == ^id, lock: "FOR UPDATE"))
+
+  defp ticket_project_id(ticket_id) do
+    Repo.one(from(ticket in Ticket, where: ticket.id == ^ticket_id, select: ticket.project_id))
+  end
 
   defp require_project(nil), do: {:error, %Error{kind: :not_found, message: "project not found"}}
   defp require_project(project), do: {:ok, project}
