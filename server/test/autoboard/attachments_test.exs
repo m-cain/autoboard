@@ -2,9 +2,11 @@ defmodule Autoboard.AttachmentsTest do
   use Autoboard.DataCase, async: false
 
   alias Autoboard.Attachments
+  alias Autoboard.Attachments.Attachment
   alias Autoboard.Auth.Context
   alias Autoboard.Domain.Error
   alias Autoboard.Projects
+  alias Autoboard.Repo
   alias Autoboard.Tickets
 
   setup do
@@ -67,6 +69,30 @@ defmodule Autoboard.AttachmentsTest do
       assert {:error, %Error{kind: :validation_failed, fields: %{source_path: [_]}}} =
                Attachments.add_from_path(ctx, ticket.id, path)
     end
+  end
+
+  test "preserves authorization and UUID validation errors before filesystem staging", %{
+    ctx: ctx,
+    data_dir: data_dir
+  } do
+    project = project_fixture(ctx, "AUTO")
+    ticket = ticket_fixture(ctx, project)
+    source = write_source(data_dir, "source.txt", "hello")
+    invalid_ctx = %Context{actor: :system, scope: :global}
+
+    assert {:error, %Error{kind: :unauthorized}} =
+             Attachments.add_from_path(invalid_ctx, ticket.id, source)
+
+    assert {:error, %Error{kind: :validation_failed, fields: %{id: [_]}}} =
+             Attachments.add_from_path(ctx, "not-a-uuid", source)
+
+    assert {:error, %Error{kind: :unauthorized}} = Attachments.fetch(invalid_ctx, ticket.id)
+
+    assert {:error, %Error{kind: :validation_failed, fields: %{id: [_]}}} =
+             Attachments.read(ctx, "not-a-uuid")
+
+    assert 0 == Repo.aggregate(Attachment, :count, :id)
+    assert [] == Path.wildcard(Path.join([data_dir, "attachments", "*"]))
   end
 
   test "returns metadata and managed path for invalid UTF-8 text", %{ctx: ctx, data_dir: data_dir} do

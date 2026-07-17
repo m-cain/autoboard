@@ -33,6 +33,7 @@ defmodule Autoboard.Attachments do
           {:error, error}
       end
     else
+      {:error, %Error{} = error} -> {:error, error}
       {:error, reason} -> {:error, storage_error(reason)}
     end
   end
