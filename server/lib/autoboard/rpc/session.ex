@@ -32,11 +32,13 @@ defmodule Autoboard.RPC.Session do
       {:ok, payload} when byte_size(payload) <= @max_frame_bytes ->
         case handle_payload(payload, context) do
           {:continue, next_context, response} ->
-            send_response(socket, response)
-            loop(socket, next_context)
+            case send_response(socket, response) do
+              :ok -> loop(socket, next_context)
+              {:error, _reason} -> :gen_tcp.close(socket)
+            end
 
           {:close, response} ->
-            send_response(socket, response)
+            _ = send_response(socket, response)
             :gen_tcp.close(socket)
         end
 
@@ -75,24 +77,46 @@ defmodule Autoboard.RPC.Session do
   end
 
   defp handle_request(request, context) when is_map(request) do
-    with {:ok, id, notification?} <- request_id(request),
-         :ok <- valid_envelope(request, id),
-         {:ok, params} <- params(request, id) do
-      dispatch(request["method"], params, id, notification?, context)
-    else
-      {:error, id, message} -> {:continue, context, Error.invalid_request(id, message)}
+    case request_id(request) do
+      {:ok, id, notification?} ->
+        case valid_envelope(request, id) do
+          :ok ->
+            case params(request, id) do
+              {:ok, params} ->
+                dispatch(request["method"], params, id, notification?, context)
+
+              {:invalid_params, error_id, error} ->
+                {:continue, context,
+                 maybe_response(notification?, Error.invalid_params(error_id, error))}
+
+              {:invalid_request, error_id, message} ->
+                {:continue, context,
+                 maybe_response(notification?, Error.invalid_request(error_id, message))}
+            end
+
+          {:invalid_request, error_id, message} ->
+            {:continue, context,
+             maybe_response(notification?, Error.invalid_request(error_id, message))}
+        end
+
+      {:invalid_request, id, message} ->
+        {:continue, context, Error.invalid_request(id, message)}
     end
   end
 
   defp handle_request(_request, context), do: {:continue, context, Error.invalid_request(nil)}
 
   defp dispatch("session.initialize", params, id, notification?, nil) do
-    case initialize(params) do
-      {:ok, context, result} ->
-        {:continue, context, maybe_response(notification?, result_envelope(id, result))}
+    if notification? do
+      {:close, nil}
+    else
+      case initialize(params) do
+        {:ok, context, result} ->
+          {:continue, context, maybe_response(notification?, result_envelope(id, result))}
 
-      {:error, :close, response} ->
-        {:close, maybe_response(notification?, Map.put(response, "id", id))}
+        {:error, :close, response} ->
+          {:close, maybe_response(notification?, Map.put(response, "id", id))}
+      end
     end
   end
 
@@ -112,9 +136,23 @@ defmodule Autoboard.RPC.Session do
   defp dispatch(method, params, id, notification?, context) do
     response =
       case Router.dispatch(context, method, params) do
-        {:ok, result} -> result_envelope(id, result)
-        {:error, %DomainError{kind: :method_not_found}} -> Error.method_not_found(id)
-        {:error, %DomainError{} = error} -> Error.domain(id, error)
+        {:ok, result} ->
+          result_envelope(id, result)
+
+        {:error, %DomainError{kind: :method_not_found}} ->
+          Error.method_not_found(id)
+
+        {:error, %DomainError{kind: :internal_error} = error} ->
+          correlation_id = Ecto.UUID.generate()
+
+          Logger.error(
+            "rpc domain internal error correlation_id=#{correlation_id}: #{inspect(error)}"
+          )
+
+          Error.internal(id, correlation_id)
+
+        {:error, %DomainError{} = error} ->
+          Error.domain(id, error)
       end
 
     {:continue, context, maybe_response(notification?, response)}
@@ -173,25 +211,67 @@ defmodule Autoboard.RPC.Session do
   defp valid_envelope(%{"jsonrpc" => "2.0", "method" => method}, _id) when is_binary(method),
     do: :ok
 
-  defp valid_envelope(_request, id), do: {:error, id, "Invalid JSON-RPC envelope"}
+  defp valid_envelope(_request, id), do: {:invalid_request, id, "Invalid JSON-RPC envelope"}
 
   defp params(%{"params" => params}, _id) when is_map(params), do: {:ok, params}
-  defp params(%{"params" => _params}, id), do: {:error, id, "params must be an object"}
-  defp params(_request, id), do: {:error, id, "params is required"}
+  defp params(%{"params" => _params}, id), do: {:invalid_params, id, params_error()}
+  defp params(_request, id), do: {:invalid_request, id, "params is required"}
 
   defp request_id(request) do
     case Map.fetch(request, "id") do
       :error -> {:ok, nil, true}
       {:ok, id} when is_binary(id) or is_integer(id) -> {:ok, id, false}
-      {:ok, nil} -> {:ok, nil, true}
-      {:ok, _id} -> {:error, nil, "id must be a string, number, or null"}
+      {:ok, nil} -> {:invalid_request, nil, "id must be a string or number"}
+      {:ok, _id} -> {:invalid_request, nil, "id must be a string or number"}
     end
+  end
+
+  defp params_error do
+    %DomainError{
+      kind: :validation_failed,
+      message: "params must be an object",
+      fields: %{params: ["must be an object"]}
+    }
   end
 
   defp maybe_response(true, _response), do: nil
   defp maybe_response(false, response), do: response
   defp send_response(_socket, nil), do: :ok
-  defp send_response(socket, response), do: :gen_tcp.send(socket, Jason.encode!(response))
+
+  defp send_response(socket, response) do
+    max_bytes = max_frame_bytes()
+
+    case Jason.encode(response) do
+      {:ok, payload} when byte_size(payload) <= max_bytes ->
+        :gen_tcp.send(socket, payload)
+
+      {:ok, _payload} ->
+        correlation_id = Ecto.UUID.generate()
+        Logger.error("rpc response exceeded frame limit correlation_id=#{correlation_id}")
+        send_opaque_internal(socket, Map.get(response, "id"), correlation_id)
+
+      {:error, _reason} ->
+        correlation_id = Ecto.UUID.generate()
+        Logger.error("rpc response encoding failed correlation_id=#{correlation_id}")
+        send_opaque_internal(socket, Map.get(response, "id"), correlation_id)
+    end
+  end
+
+  defp send_opaque_internal(socket, id, correlation_id) do
+    max_bytes = max_frame_bytes()
+
+    case Jason.encode(Error.internal(id, correlation_id)) do
+      {:ok, payload} when byte_size(payload) <= max_bytes ->
+        :gen_tcp.send(socket, payload)
+
+      _ ->
+        {:error, :response_too_large}
+    end
+  end
+
+  defp max_frame_bytes,
+    do: Application.get_env(:autoboard, :rpc_max_frame_bytes, @max_frame_bytes)
+
   defp result_envelope(id, result), do: %{"jsonrpc" => "2.0", "id" => id, "result" => result}
   defp version, do: Application.spec(:autoboard, :vsn) |> to_string()
 end

@@ -25,4 +25,33 @@ defmodule Autoboard.RPC.ListenerTest do
     assert {:error, :unsafe_existing_socket_path} = Listener.start_link(path: path)
     assert {:ok, "must survive"} = File.read(path)
   end
+
+  test "restarts a killed acceptor and accepts a new connection" do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "autoboard-rpc-restart-#{System.unique_integer([:positive])}.sock"
+      )
+
+    {:ok, listener} = start_supervised({Listener, path: path})
+    state = :sys.get_state(listener)
+    Process.exit(state.acceptor, :kill)
+
+    assert eventually(fn -> :sys.get_state(listener).acceptor != state.acceptor end)
+    assert {:ok, socket} = Autoboard.RPCClient.connect(path)
+    :ok = :gen_tcp.close(socket)
+  end
+
+  defp eventually(fun, attempts \\ 20)
+  defp eventually(fun, 0), do: fun.()
+
+  defp eventually(fun, attempts) do
+    if fun.(),
+      do: true,
+      else:
+        (
+          Process.sleep(10)
+          eventually(fun, attempts - 1)
+        )
+  end
 end

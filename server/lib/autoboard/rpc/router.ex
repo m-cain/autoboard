@@ -141,7 +141,8 @@ defmodule Autoboard.RPC.Router do
     with {:ok, ticket_ref} <- required(params, "ticket_id"),
          {:ok, ticket_id} <- ticket_id(ctx, ticket_ref),
          {:ok, body} <- required(params, "body"),
-         {:ok, comment} <- Comments.add(ctx, ticket_id, %{"body" => body}) do
+         {:ok, comment} <- Comments.add(ctx, ticket_id, %{"body" => body}),
+         {:ok, detail} <- ReadModel.ticket_detail(ctx, ticket_id) do
       {:ok,
        %{
          "id" => comment.id,
@@ -149,7 +150,8 @@ defmodule Autoboard.RPC.Router do
          "project_id" => comment.project_id,
          "body" => comment.body,
          "actor" => Atom.to_string(comment.actor),
-         "inserted_at" => DateTime.to_iso8601(comment.inserted_at)
+         "inserted_at" => DateTime.to_iso8601(comment.inserted_at),
+         "ticket_revision" => detail.ticket.revision
        }}
     end
   end
@@ -159,8 +161,9 @@ defmodule Autoboard.RPC.Router do
          {:ok, ticket_id} <- ticket_id(ctx, ticket_ref),
          {:ok, path} <- required(params, "path"),
          true <- is_binary(path) || validation(:path, "must be a string"),
-         {:ok, attachment} <- Attachments.add_from_path(ctx, ticket_id, path) do
-      {:ok, Presenter.attachment(attachment)}
+         {:ok, attachment} <- Attachments.add_from_path(ctx, ticket_id, path),
+         {:ok, detail} <- ReadModel.ticket_detail(ctx, ticket_id) do
+      {:ok, Map.put(Presenter.attachment(attachment), "ticket_revision", detail.ticket.revision)}
     else
       false -> validation(:path, "must be a string")
       {:error, %Error{} = error} -> {:error, error}
@@ -170,7 +173,7 @@ defmodule Autoboard.RPC.Router do
   defp route(ctx, "attachments.read", params) do
     with {:ok, attachment_id} <- required(params, "attachment_id"),
          {:ok, read} <- Attachments.read(ctx, attachment_id) do
-      result = %{"attachment" => Presenter.attachment(read.attachment, true)}
+      result = Presenter.attachment(read.attachment, true)
 
       {:ok,
        if(Map.has_key?(read, :content),

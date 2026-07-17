@@ -26,8 +26,16 @@ defmodule Autoboard.RPC.Listener do
           Acceptor.accept_loop(socket, session_supervisor)
         end)
 
+      acceptor_ref = Process.monitor(acceptor)
+
       {:ok,
-       %{path: path, socket: socket, session_supervisor: session_supervisor, acceptor: acceptor}}
+       %{
+         path: path,
+         socket: socket,
+         session_supervisor: session_supervisor,
+         acceptor: acceptor,
+         acceptor_ref: acceptor_ref
+       }}
     else
       {:error, reason} -> {:stop, reason}
     end
@@ -38,6 +46,19 @@ defmodule Autoboard.RPC.Listener do
     :gen_tcp.close(state.socket)
     safe_remove_socket(state.path)
     :ok
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{acceptor_ref: ref} = state) do
+    case Task.Supervisor.start_child(state.session_supervisor, fn ->
+           Acceptor.accept_loop(state.socket, state.session_supervisor)
+         end) do
+      {:ok, acceptor} ->
+        {:noreply, %{state | acceptor: acceptor, acceptor_ref: Process.monitor(acceptor)}}
+
+      {:error, _reason} ->
+        {:stop, :acceptor_unavailable, state}
+    end
   end
 
   defp listen(path) do

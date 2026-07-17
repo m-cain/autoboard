@@ -174,6 +174,51 @@ defmodule Autoboard.RPC.SessionTest do
     assert {:ok, %{"id" => nil, "error" => %{"code" => -32600}}} = RPCClient.receive(socket)
   end
 
+  test "treats only an absent id as a notification and never initializes from one", %{
+    path: path,
+    token: token
+  } do
+    {:ok, socket} = RPCClient.connect(path)
+
+    :ok =
+      RPCClient.send(socket, %{
+        "jsonrpc" => "2.0",
+        "method" => "session.initialize",
+        "params" => initialize(1, token)["params"]
+      })
+
+    assert {:error, :closed} = RPCClient.receive(socket)
+
+    {:ok, socket} = RPCClient.connect(path)
+    :ok = RPCClient.send(socket, Map.put(initialize(1, token), "id", nil))
+    assert {:ok, %{"id" => nil, "error" => %{"code" => -32600}}} = RPCClient.receive(socket)
+  end
+
+  test "uses invalid params for object methods with non-object params and suppresses notification failures",
+       %{
+         path: path,
+         token: token
+       } do
+    {:ok, socket} = RPCClient.connect(path)
+    :ok = RPCClient.send(socket, initialize(1, token))
+    assert {:ok, _} = RPCClient.receive(socket)
+
+    :ok =
+      RPCClient.send(socket, %{
+        "jsonrpc" => "2.0",
+        "id" => 2,
+        "method" => "projects.list",
+        "params" => []
+      })
+
+    assert {:ok, %{"id" => 2, "error" => %{"code" => -32602}}} = RPCClient.receive(socket)
+
+    :ok =
+      RPCClient.send(socket, %{"jsonrpc" => "2.0", "method" => "missing.method", "params" => %{}})
+
+    assert {:error, :timeout} = RPCClient.receive(socket, 50)
+  end
+
   test "rejects oversized frames without leaving the session open", %{path: path} do
     {:ok, socket} = RPCClient.connect(path)
     :ok = :gen_tcp.send(socket, <<@max_frame_bytes + 1::unsigned-big-integer-size(32)>>)
