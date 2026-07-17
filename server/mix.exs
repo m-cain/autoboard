@@ -6,6 +6,8 @@ defmodule Autoboard.MixProject do
       app: :autoboard,
       version: "0.1.0",
       elixir: "~> 1.19",
+      elixirc_paths: elixirc_paths(Mix.env()),
+      aliases: aliases(),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -29,5 +31,12 @@ defmodule Autoboard.MixProject do
       {:jason, "~> 1.4"},
       {:xema, "~> 0.17.9", only: :test}
     ]
+  end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
+
+  defp aliases do
+    ["ecto.reset": ["ecto.drop", "ecto.create", "ecto.migrate"]]
   end
 end
