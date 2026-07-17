@@ -7,6 +7,7 @@ defmodule AutoboardWeb.EventsStream do
   alias Autoboard.Auth.Context
 
   @heartbeat_ms 15_000
+  @max_mailbox 1_000
 
   @spec stream(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def stream(conn, options \\ []) do
@@ -19,38 +20,10 @@ defmodule AutoboardWeb.EventsStream do
       end
     else
       {:error, :invalid_last_event_id} ->
-        conn
-        |> put_resp_content_type("application/json")
-        |> send_resp(
-          400,
-          Jason.encode!(%{
-            "error" => %{
-              "kind" => "validation_failed",
-              "message" => "Last-Event-ID must be one non-negative integer",
-              "fields" => %{"last_event_id" => ["must be a non-negative integer"]},
-              "current" => nil
-            }
-          })
-        )
+        validation_response(conn, "Last-Event-ID must be one non-negative integer")
 
       {:error, _reason} ->
-        send_resp(conn, 503, "event stream unavailable")
-    end
-  end
-
-  defp stream_subscribed(conn, last_id, options) do
-    with {:ok, high_water} <- Activity.high_water(Context.global(:me)),
-         {:ok, replay} <- Activity.replay_between(Context.global(:me), last_id, high_water),
-         {:ok, conn} <- send_stream_headers(conn) do
-      case send_events(conn, replay, options) do
-        {:ok, streamed} ->
-          receive_events_with_heartbeat(streamed, max(last_id, high_water), options)
-
-        {:error, streamed} ->
-          streamed
-      end
-    else
-      {:error, _reason} -> send_resp(conn, 503, "event stream unavailable")
+        unavailable_response(conn)
     end
   end
 
@@ -79,16 +52,26 @@ defmodule AutoboardWeb.EventsStream do
     "id: #{event.id}\nevent: activity\ndata: #{Jason.encode!(payload)}\n\n"
   end
 
-  @spec select_live(non_neg_integer(), [map() | struct()]) :: {non_neg_integer(), [pos_integer()]}
-  def select_live(last_id, events) do
-    Enum.reduce(events, {last_id, []}, fn event, {current, selected} ->
-      if is_integer(event.id) and event.id > current do
-        {event.id, selected ++ [event.id]}
-      else
-        {current, selected}
+  defp stream_subscribed(conn, last_id, options) do
+    with {:ok, high_water} <- Activity.high_water(context()),
+         :ok <- valid_cursor(last_id, high_water) do
+      conn = send_stream_headers(conn)
+
+      case drain_until(conn, last_id, high_water, options) do
+        {:ok, streamed, cursor} -> receive_events(streamed, cursor, options)
+        {:error, streamed, _cursor} -> streamed
       end
-    end)
+    else
+      {:error, :future_last_event_id} ->
+        validation_response(conn, "Last-Event-ID is newer than the activity log")
+
+      {:error, _reason} ->
+        unavailable_response(conn)
+    end
   end
+
+  defp valid_cursor(last_id, high_water) when last_id <= high_water, do: :ok
+  defp valid_cursor(_last_id, _high_water), do: {:error, :future_last_event_id}
 
   defp send_stream_headers(conn) do
     conn
@@ -98,67 +81,116 @@ defmodule AutoboardWeb.EventsStream do
     |> send_chunked(200)
   end
 
+  # The DB, not raw broadcasts, is the source of streamed events. Bounded pages
+  # make a slow/reconnecting client unable to turn a large replay into one huge
+  # in-memory response.
+  defp drain_until(conn, cursor, upper, options) do
+    case Activity.replay_page(context(), cursor, upper, page_size(options)) do
+      {:ok, []} ->
+        {:ok, conn, cursor}
+
+      {:ok, events} ->
+        case send_events(conn, events, options) do
+          {:ok, streamed, latest} -> drain_until(streamed, latest, upper, options)
+          {:error, streamed, latest} -> {:error, streamed, latest}
+        end
+
+      {:error, _reason} ->
+        {:error, conn, cursor}
+    end
+  end
+
   defp send_events(conn, events, options) do
-    Enum.reduce_while(events, {:ok, conn}, fn event, {:ok, acc} ->
-      case chunk(acc, format_event(event), options) do
-        {:ok, updated} -> {:cont, {:ok, updated}}
-        {:error, updated} -> {:halt, {:error, updated}}
+    Enum.reduce_while(events, {:ok, conn, nil}, fn event, {:ok, current, _latest} ->
+      case chunk(current, format_event(event), options) do
+        {:ok, streamed} -> {:cont, {:ok, streamed, event.id}}
+        {:error, streamed} -> {:halt, {:error, streamed, event.id - 1}}
       end
     end)
   end
 
-  defp receive_events(conn, last_id, timer, options) do
-    receive do
-      {:activity, event} when is_integer(event.id) and event.id > last_id ->
-        case chunk(conn, format_event(event), options) do
-          {:ok, updated} -> receive_events(updated, event.id, timer, options)
-          {:error, updated} -> updated
-        end
+  defp receive_events(conn, cursor, options) do
+    timer = schedule_heartbeat(options)
 
-      {:activity, _event} ->
-        receive_events(conn, last_id, timer, options)
+    try do
+      receive do
+        {:activity, _event} ->
+          if overloaded?(options) do
+            conn
+          else
+            drain_notifications()
 
-      :autoboard_sse_heartbeat ->
-        case chunk(conn, ": heartbeat\n\n", options) do
-          {:ok, updated} ->
-            next =
-              Process.send_after(
-                self(),
-                :autoboard_sse_heartbeat,
-                Keyword.get(options, :heartbeat_ms, @heartbeat_ms)
-              )
+            case drain_until(conn, cursor, nil, options) do
+              {:ok, streamed, latest} -> receive_events(streamed, latest, options)
+              {:error, streamed, _latest} -> streamed
+            end
+          end
 
-            Process.cancel_timer(timer)
-            receive_events(updated, last_id, next, options)
-
-          {:error, updated} ->
-            updated
-        end
+        :autoboard_sse_heartbeat ->
+          case chunk(conn, ": heartbeat\n\n", options) do
+            {:ok, streamed} -> receive_events(streamed, cursor, options)
+            {:error, streamed} -> streamed
+          end
+      end
+    after
+      cancel_heartbeat(timer, options)
     end
   end
 
-  defp receive_events_with_heartbeat(conn, last_id, options) do
-    timer =
-      Process.send_after(
-        self(),
-        :autoboard_sse_heartbeat,
-        Keyword.get(options, :heartbeat_ms, @heartbeat_ms)
-      )
-
-    try do
-      receive_events(conn, last_id, timer, options)
+  defp drain_notifications do
+    receive do
+      {:activity, _event} -> drain_notifications()
     after
-      Process.cancel_timer(timer)
+      0 -> :ok
     end
   end
 
   defp chunk(conn, data, options) do
     case Keyword.get(options, :chunker, &Plug.Conn.chunk/2).(conn, data) do
-      {:ok, updated} -> {:ok, updated}
-      {:error, updated} -> {:error, updated}
+      {:ok, streamed} -> {:ok, streamed}
+      {:error, _reason} -> {:error, conn}
     end
   end
 
+  defp page_size(options), do: Keyword.get(options, :page_size, Activity.replay_page_size())
+
+  defp overloaded?(options) do
+    max_mailbox = Keyword.get(options, :max_mailbox, @max_mailbox)
+    {:message_queue_len, size} = Process.info(self(), :message_queue_len)
+    size > max_mailbox
+  end
+
+  defp schedule_heartbeat(options) do
+    Keyword.get(options, :scheduler, &Process.send_after/3).(
+      self(),
+      :autoboard_sse_heartbeat,
+      @heartbeat_ms
+    )
+  end
+
+  defp cancel_heartbeat(timer, options) do
+    Keyword.get(options, :canceller, &Process.cancel_timer/1).(timer)
+    :ok
+  end
+
+  defp validation_response(conn, message) do
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(
+      400,
+      Jason.encode!(%{
+        "error" => %{
+          "kind" => "validation_failed",
+          "message" => message,
+          "fields" => %{"last_event_id" => [message]},
+          "current" => nil
+        }
+      })
+    )
+  end
+
+  defp unavailable_response(conn), do: send_resp(conn, 503, "event stream unavailable")
+  defp context, do: Context.global(:me)
   defp format_timestamp(%DateTime{} = timestamp), do: DateTime.to_iso8601(timestamp)
   defp format_timestamp(timestamp), do: timestamp
 end

@@ -15,7 +15,9 @@ defmodule AutoboardWeb.Router do
   @project_key ~r/\A[A-Za-z][A-Za-z0-9]{1,7}\z/
   @ticket_identifier ~r/\A[A-Za-z][A-Za-z0-9]{1,7}-[1-9][0-9]*\z/
 
-  plug(Plug.Static, at: "/", from: {:autoboard, "priv/static"}, only: [])
+  @static_options Plug.Static.init(at: "/", from: {:autoboard, "priv/static"}, only: [])
+
+  plug(:safe_static)
   plug(:match)
   plug(Plug.Parsers, parsers: [:json], pass: ["application/json"], json_decoder: Jason)
   plug(:dispatch)
@@ -68,7 +70,10 @@ defmodule AutoboardWeb.Router do
          :ok <- readable_file(attachment.managed_path) do
       conn
       |> put_resp_content_type(attachment.media_type)
-      |> put_resp_header("content-disposition", "attachment")
+      |> put_resp_header(
+        "content-disposition",
+        attachment_disposition(attachment.original_filename)
+      )
       |> send_file(200, attachment.managed_path)
     else
       {:error, error} -> JSON.error(conn, error)
@@ -89,10 +94,10 @@ defmodule AutoboardWeb.Router do
 
   match _ do
     cond do
-      String.starts_with?(conn.request_path, "/api/") ->
+      api_path?(conn.request_path) ->
         JSON.error(conn, %Error{kind: :not_found, message: "route not found"})
 
-      browser_route?(conn.request_path) ->
+      browser_route?(conn) ->
         SPA.send_index(conn)
 
       true ->
@@ -105,6 +110,12 @@ defmodule AutoboardWeb.Router do
 
   defp ticket_list(conn, {:error, error}), do: JSON.error(conn, error)
   defp context, do: Context.global(:me)
+
+  defp safe_static(conn, _options) do
+    Plug.Static.call(conn, @static_options)
+  rescue
+    Plug.Static.InvalidPathError -> conn |> send_resp(404, "not found") |> halt()
+  end
 
   defp valid_project_key(key) when is_binary(key) do
     if Regex.match?(@project_key, key),
@@ -145,8 +156,27 @@ defmodule AutoboardWeb.Router do
          fields: %{field => [message]}
        }}
 
-  defp browser_route?(path) do
-    not String.starts_with?(path, "/api/") and path != "/health" and
-      not String.contains?(Path.basename(path), ".")
+  defp browser_route?(conn) do
+    conn.method in ["GET", "HEAD"] and not api_path?(conn.request_path) and
+      conn.request_path != "/health" and
+      not String.contains?(Path.basename(conn.request_path), ".")
+  end
+
+  defp api_path?(path), do: path == "/api" or String.starts_with?(path, "/api/")
+
+  defp attachment_disposition(filename) do
+    safe =
+      filename
+      |> String.replace(~r/[\r\n\\\"]/, "_")
+      |> String.replace(~r/[^\x20-\x7E]/, "_")
+
+    encoded = URI.encode(filename, &rfc5987_safe?/1)
+    "attachment; filename=\"#{safe}\"; filename*=UTF-8''#{encoded}"
+  end
+
+  defp rfc5987_safe?(character) do
+    (character >= ?a and character <= ?z) or (character >= ?A and character <= ?Z) or
+      (character >= ?0 and character <= ?9) or
+      character in [?!, ?#, ?$, ?&, ?+, ?-, ?., ?^, ?_, ?`, ?|, ?~]
   end
 end

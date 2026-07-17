@@ -2,11 +2,16 @@ defmodule AutoboardWeb.RouterTest do
   use Autoboard.DataCase, async: false
   import Plug.Test
 
-  alias Autoboard.Auth.Context
   alias Autoboard.Attachments
+  alias Autoboard.Attachments.Attachment
+  alias Autoboard.Activity.Event
+  alias Autoboard.Auth.Context
+  alias Autoboard.Comments.Comment
   alias Autoboard.Projects
   alias Autoboard.Repo
   alias Autoboard.Tickets
+  alias Autoboard.Tickets.Dependency
+  alias Autoboard.Tickets.Label
   alias AutoboardWeb.Router
 
   @opts Router.init([])
@@ -66,22 +71,34 @@ defmodule AutoboardWeb.RouterTest do
     assert response.status == 200
     assert response.resp_body == "read-only attachment"
     assert ["text/plain; charset=utf-8"] = Plug.Conn.get_resp_header(response, "content-type")
-    assert ["attachment"] = Plug.Conn.get_resp_header(response, "content-disposition")
+    [disposition] = Plug.Conn.get_resp_header(response, "content-disposition")
+    assert disposition =~ "attachment; filename=\""
+    assert disposition =~ "filename*=UTF-8''"
     assert :ok = File.rm(attachment.managed_path)
   end
 
   test "has no write routes and never changes rows" do
     before = %{
       projects: Repo.aggregate(Autoboard.Projects.Project, :count),
-      tickets: Repo.aggregate(Autoboard.Tickets.Ticket, :count)
+      tickets: Repo.aggregate(Autoboard.Tickets.Ticket, :count),
+      activity: Repo.aggregate(Event, :count),
+      comments: Repo.aggregate(Comment, :count),
+      attachments: Repo.aggregate(Attachment, :count),
+      labels: Repo.aggregate(Label, :count),
+      dependencies: Repo.aggregate(Dependency, :count)
     }
 
     for method <- [:post, :put, :patch, :delete],
         path <- [
           "/api/v1/projects",
+          "/api/v1/triage",
           "/api/v1/projects/HTTP/board",
+          "/api/v1/projects/HTTP/canceled",
           "/api/v1/tickets/HTTP-1",
-          "/api/v1/events"
+          "/api/v1/attachments/00000000-0000-4000-8000-000000000000",
+          "/api/v1/events",
+          "/api/v1/unknown",
+          "/api"
         ] do
       conn = conn(method, path) |> Router.call(@opts)
       assert conn.status == 404
@@ -89,6 +106,11 @@ defmodule AutoboardWeb.RouterTest do
 
     assert before.projects == Repo.aggregate(Autoboard.Projects.Project, :count)
     assert before.tickets == Repo.aggregate(Autoboard.Tickets.Ticket, :count)
+    assert before.activity == Repo.aggregate(Event, :count)
+    assert before.comments == Repo.aggregate(Comment, :count)
+    assert before.attachments == Repo.aggregate(Attachment, :count)
+    assert before.labels == Repo.aggregate(Label, :count)
+    assert before.dependencies == Repo.aggregate(Dependency, :count)
   end
 
   test "reports health through an injectable database check" do
@@ -100,6 +122,16 @@ defmodule AutoboardWeb.RouterTest do
 
     Application.put_env(:autoboard, :health_check, fn -> {:error, :down} end)
     assert {503, %{"status" => "unavailable"}} = get_response("/health")
+  end
+
+  test "never treats browser paths as mutation fallbacks" do
+    for method <- [:post, :put, :patch, :delete] do
+      response = conn(method, "/projects") |> Router.call(@opts)
+      assert response.status == 404
+    end
+
+    assert (conn(:get, "/assets/missing.js") |> Router.call(@opts)).status == 404
+    assert (conn(:get, "/../config/config.exs") |> Router.call(@opts)).status == 404
   end
 
   defp get(path), do: get_response(path) |> elem(1)

@@ -39,6 +39,17 @@ defmodule Autoboard.ActivityTest do
     assert second_event.project_id == second.id
   end
 
+  test "does not allow activity insertion outside a transaction" do
+    assert {:error, :activity_append_requires_transaction} =
+             Activity.append(
+               Context.global(:me),
+               "fixture.outside_transaction",
+               Ecto.UUID.generate(),
+               nil,
+               %{}
+             )
+  end
+
   test "rejects nested ownership before broadcasting an outer rolled-back event" do
     :ok = Activity.subscribe()
     on_exit(fn -> Activity.unsubscribe() end)
