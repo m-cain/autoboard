@@ -15,7 +15,8 @@
           "type": "object",
           "required": [
             "kind",
-            "message"
+            "message",
+            "fields"
           ],
           "properties": {
             "kind": {
@@ -26,6 +27,17 @@
             },
             "message": {
               "type": "string"
+            },
+            "fields": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           },
           "additionalProperties": false
@@ -34,7 +46,8 @@
           "type": "object",
           "required": [
             "kind",
-            "message"
+            "message",
+            "fields"
           ],
           "properties": {
             "kind": {
@@ -45,6 +58,17 @@
             },
             "message": {
               "type": "string"
+            },
+            "fields": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           },
           "additionalProperties": false
@@ -53,7 +77,8 @@
           "type": "object",
           "required": [
             "kind",
-            "message"
+            "message",
+            "fields"
           ],
           "properties": {
             "kind": {
@@ -64,6 +89,17 @@
             },
             "message": {
               "type": "string"
+            },
+            "fields": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           },
           "additionalProperties": false
@@ -72,7 +108,8 @@
           "type": "object",
           "required": [
             "kind",
-            "message"
+            "message",
+            "fields"
           ],
           "properties": {
             "kind": {
@@ -83,6 +120,17 @@
             },
             "message": {
               "type": "string"
+            },
+            "fields": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           },
           "additionalProperties": false
@@ -91,7 +139,8 @@
           "type": "object",
           "required": [
             "kind",
-            "message"
+            "message",
+            "fields"
           ],
           "properties": {
             "kind": {
@@ -102,6 +151,17 @@
             },
             "message": {
               "type": "string"
+            },
+            "fields": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           },
           "additionalProperties": false
@@ -110,7 +170,8 @@
           "type": "object",
           "required": [
             "kind",
-            "message"
+            "message",
+            "fields"
           ],
           "properties": {
             "kind": {
@@ -121,6 +182,17 @@
             },
             "message": {
               "type": "string"
+            },
+            "fields": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             }
           },
           "additionalProperties": false
@@ -163,7 +235,8 @@
       "required": [
         "kind",
         "message",
-        "current"
+        "current",
+        "fields"
       ],
       "properties": {
         "kind": {
@@ -220,13 +293,13 @@
                 },
                 "inserted_at": {
                   "type": "string",
-                  "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                  "format": "date-time"
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                 },
                 "updated_at": {
                   "type": "string",
-                  "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                  "format": "date-time"
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                 }
               },
               "additionalProperties": false
@@ -367,13 +440,13 @@
                 },
                 "inserted_at": {
                   "type": "string",
-                  "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                  "format": "date-time"
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                 },
                 "updated_at": {
                   "type": "string",
-                  "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                  "format": "date-time"
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                 }
               },
               "additionalProperties": false
@@ -522,13 +595,13 @@
                 },
                 "inserted_at": {
                   "type": "string",
-                  "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                  "format": "date-time"
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                 },
                 "updated_at": {
                   "type": "string",
-                  "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                  "format": "date-time"
+                  "format": "date-time",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                 },
                 "project": {
                   "type": "object",
@@ -573,13 +646,13 @@
                     },
                     "inserted_at": {
                       "type": "string",
-                      "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                      "format": "date-time"
+                      "format": "date-time",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                     },
                     "updated_at": {
                       "type": "string",
-                      "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                      "format": "date-time"
+                      "format": "date-time",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                     }
                   },
                   "additionalProperties": false
@@ -722,13 +795,13 @@
                         },
                         "inserted_at": {
                           "type": "string",
-                          "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                          "format": "date-time"
+                          "format": "date-time",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                         },
                         "updated_at": {
                           "type": "string",
-                          "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                          "format": "date-time"
+                          "format": "date-time",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                         }
                       },
                       "additionalProperties": false
@@ -876,13 +949,13 @@
                       },
                       "inserted_at": {
                         "type": "string",
-                        "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                       },
                       "updated_at": {
                         "type": "string",
-                        "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                       }
                     },
                     "additionalProperties": false
@@ -1026,13 +1099,13 @@
                       },
                       "inserted_at": {
                         "type": "string",
-                        "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                       },
                       "updated_at": {
                         "type": "string",
-                        "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                       }
                     },
                     "additionalProperties": false
@@ -1176,13 +1249,13 @@
                       },
                       "inserted_at": {
                         "type": "string",
-                        "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                       },
                       "updated_at": {
                         "type": "string",
-                        "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                       }
                     },
                     "additionalProperties": false
@@ -1232,8 +1305,8 @@
                       },
                       "inserted_at": {
                         "type": "string",
-                        "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                       }
                     },
                     "additionalProperties": false
@@ -1300,8 +1373,8 @@
                       },
                       "inserted_at": {
                         "type": "string",
-                        "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                       }
                     },
                     "additionalProperties": false
@@ -1365,8 +1438,8 @@
                       },
                       "inserted_at": {
                         "type": "string",
-                        "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
                       }
                     },
                     "additionalProperties": false
@@ -1396,7 +1469,7 @@
       "required": [
         "kind",
         "message",
-        "correlation_id"
+        "fields"
       ],
       "properties": {
         "kind": {
@@ -1408,8 +1481,16 @@
         "message": {
           "type": "string"
         },
-        "correlation_id": {
-          "type": "string"
+        "fields": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "additionalProperties": false

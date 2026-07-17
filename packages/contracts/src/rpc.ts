@@ -26,20 +26,20 @@ const ErrorCurrent = Schema.Union(Project, TicketSummary, TicketDetail)
 const ErrorCurrentJsonSchema = Schema.Union(ProjectJsonSchema, TicketSummaryJsonSchema, TicketDetailJsonSchema)
 
 const SimpleFailure = Schema.Union(
-  exactStruct({ kind: Schema.Literal("unauthorized"), message: Schema.String }),
-  exactStruct({ kind: Schema.Literal("not_found"), message: Schema.String }),
-  exactStruct({ kind: Schema.Literal("invalid_transition"), message: Schema.String }),
-  exactStruct({ kind: Schema.Literal("blocked_by_dependency"), message: Schema.String }),
-  exactStruct({ kind: Schema.Literal("dependency_cycle"), message: Schema.String }),
-  exactStruct({ kind: Schema.Literal("attachment_failed"), message: Schema.String }),
+  exactStruct({ kind: Schema.Literal("unauthorized"), message: Schema.String, fields: ErrorFields }),
+  exactStruct({ kind: Schema.Literal("not_found"), message: Schema.String, fields: ErrorFields }),
+  exactStruct({ kind: Schema.Literal("invalid_transition"), message: Schema.String, fields: ErrorFields }),
+  exactStruct({ kind: Schema.Literal("blocked_by_dependency"), message: Schema.String, fields: ErrorFields }),
+  exactStruct({ kind: Schema.Literal("dependency_cycle"), message: Schema.String, fields: ErrorFields }),
+  exactStruct({ kind: Schema.Literal("attachment_failed"), message: Schema.String, fields: ErrorFields }),
 )
 const SimpleFailureJsonSchema = Schema.Union(
-  Schema.Struct({ kind: Schema.Literal("unauthorized"), message: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("not_found"), message: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("invalid_transition"), message: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("blocked_by_dependency"), message: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("dependency_cycle"), message: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("attachment_failed"), message: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("unauthorized"), message: Schema.String, fields: ErrorFields }),
+  Schema.Struct({ kind: Schema.Literal("not_found"), message: Schema.String, fields: ErrorFields }),
+  Schema.Struct({ kind: Schema.Literal("invalid_transition"), message: Schema.String, fields: ErrorFields }),
+  Schema.Struct({ kind: Schema.Literal("blocked_by_dependency"), message: Schema.String, fields: ErrorFields }),
+  Schema.Struct({ kind: Schema.Literal("dependency_cycle"), message: Schema.String, fields: ErrorFields }),
+  Schema.Struct({ kind: Schema.Literal("attachment_failed"), message: Schema.String, fields: ErrorFields }),
 )
 
 export const RpcFailure = Schema.Union(
@@ -49,9 +49,9 @@ export const RpcFailure = Schema.Union(
     kind: Schema.Literal("revision_conflict"),
     message: Schema.String,
     current: ErrorCurrent,
-    fields: Schema.optional(ErrorFields),
+    fields: ErrorFields,
   }),
-  exactStruct({ kind: Schema.Literal("internal_error"), message: Schema.String, correlation_id: Schema.String }),
+  exactStruct({ kind: Schema.Literal("internal_error"), message: Schema.String, fields: ErrorFields }),
 )
 
 export const RpcFailureJsonSchema = Schema.Union(
@@ -61,15 +61,20 @@ export const RpcFailureJsonSchema = Schema.Union(
     kind: Schema.Literal("revision_conflict"),
     message: Schema.String,
     current: ErrorCurrentJsonSchema,
-    fields: Schema.optional(ErrorFields),
+    fields: ErrorFields,
   }),
-  Schema.Struct({ kind: Schema.Literal("internal_error"), message: Schema.String, correlation_id: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("internal_error"), message: Schema.String, fields: ErrorFields }),
 )
 
 const ProtocolErrorData = Schema.Union(
   exactStruct({ kind: Schema.Literal("invalid_request") }),
   exactStruct({ kind: Schema.Literal("method_not_found") }),
   exactStruct({ kind: Schema.Literal("internal_error"), correlation_id: Schema.String }),
+)
+const ProtocolErrorDataJsonSchema = Schema.Union(
+  Schema.Struct({ kind: Schema.Literal("invalid_request") }),
+  Schema.Struct({ kind: Schema.Literal("method_not_found") }),
+  Schema.Struct({ kind: Schema.Literal("internal_error"), correlation_id: Schema.String }),
 )
 
 export const RpcSuccess = exactStruct({
@@ -97,6 +102,15 @@ export const RpcEnvelopeFailure = exactStruct({
     code: Schema.Number,
     message: Schema.String,
     data: Schema.Union(RpcFailure, ProtocolErrorData),
+  }),
+})
+export const RpcEnvelopeFailureJsonSchema = Schema.Struct({
+  jsonrpc: Schema.Literal("2.0"),
+  id: Schema.Union(Schema.String, Schema.Number, Schema.Null),
+  error: Schema.Struct({
+    code: Schema.Number,
+    message: Schema.String,
+    data: Schema.Union(RpcFailureJsonSchema, ProtocolErrorDataJsonSchema),
   }),
 })
 

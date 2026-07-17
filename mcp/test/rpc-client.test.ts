@@ -128,11 +128,37 @@ describe("RpcClient", () => {
   test("surfaces server errors as typed RPC errors", async () => {
     const fixture = await startServer((request, socket) => {
       if (initialized(request, socket)) return
-      socket.write(frame({ jsonrpc: "2.0", id: request.id, error: { code: -32010, message: "stale", data: { kind: "revision_conflict" } } }))
+      socket.write(frame({
+        jsonrpc: "2.0",
+        id: request.id,
+        error: { code: -32010, message: "no access", data: { kind: "unauthorized", message: "no access", fields: {} } },
+      }))
     })
     const client = await RpcClient.connect({ socketPath: fixture.path, token: "token" })
 
     await expect(client.call("tickets.update", {}, Schema.Unknown, "write")).rejects.toBeInstanceOf(RpcError)
+    await client.close()
+  })
+
+  test("rejects malformed error envelopes as protocol errors and preserves valid envelope errors", async () => {
+    const malformed = [
+      { jsonrpc: "1.0", error: { code: -32010, message: "no", data: { kind: "unauthorized", message: "no", fields: {} } } },
+      { jsonrpc: "2.0", error: { code: "-32010", message: "no", data: { kind: "unauthorized", message: "no", fields: {} } } },
+      { jsonrpc: "2.0", error: { code: -32010, message: 9, data: { kind: "unauthorized", message: "no", fields: {} } } },
+      { jsonrpc: "2.0", error: { code: -32010, message: "no", data: { kind: "unauthorized", message: "no" } } },
+      { jsonrpc: "2.0", error: { code: -32010, message: "no", data: { kind: "unauthorized", message: "no", fields: {}, extra: true } } },
+    ]
+    let index = 0
+    const fixture = await startServer((request, socket) => {
+      if (initialized(request, socket)) return
+      const response = malformed[index++]!
+      socket.write(frame({ ...response, id: request.id }))
+    })
+    const client = await RpcClient.connect({ socketPath: fixture.path, token: "token" })
+
+    for (const _ of malformed) {
+      await expect(client.call("tickets.get", {}, Schema.Unknown, "read")).rejects.toBeInstanceOf(RpcProtocolError)
+    }
     await client.close()
   })
 

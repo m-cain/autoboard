@@ -7,6 +7,7 @@ import {
   Attachment,
   AttachmentRpc,
   ProjectBoard,
+  RpcEnvelopeFailure,
   RpcSuccess,
   RpcFailure,
   TicketDetail,
@@ -49,6 +50,18 @@ describe("Autoboard transport contracts", () => {
       ...board,
       project: { ...board.project, inserted_at: "2026-02-30T00:00:00Z" },
     })).toThrow()
+    expect(() => Schema.decodeUnknownSync(ProjectBoard)({
+      ...board,
+      project: { ...board.project, inserted_at: "2026-07-16T12:34:56+00:00" },
+    })).toThrow()
+    expect(() => Schema.decodeUnknownSync(ProjectBoard)({
+      ...board,
+      project: { ...board.project, inserted_at: "2026-07-16T12:34:56.1234567Z" },
+    })).toThrow()
+    expect(Schema.decodeUnknownSync(ProjectBoard)({
+      ...board,
+      project: { ...board.project, inserted_at: "2026-07-16T12:34:56.123456Z" },
+    })).toBeTruthy()
 
     expect(() => Schema.decodeUnknownSync(RpcSuccess)({
       jsonrpc: "2.0",
@@ -62,6 +75,29 @@ describe("Autoboard transport contracts", () => {
     expect(() => Schema.decodeUnknownSync(RpcFailure)({ kind: "validation_failed", message: "invalid" })).toThrow()
     expect(() => Schema.decodeUnknownSync(RpcFailure)({ kind: "revision_conflict", message: "stale" })).toThrow()
     expect(() => Schema.decodeUnknownSync(RpcFailure)({ kind: "internal_error", message: "oops" })).toThrow()
+  })
+
+  test("models actual Task 7 domain, protocol, and internal error envelopes exactly", () => {
+    const domain = {
+      jsonrpc: "2.0",
+      id: 1,
+      error: { code: -32010, message: "no access", data: { kind: "unauthorized", message: "no access", fields: {} } },
+    }
+    const protocol = {
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32600, message: "Invalid Request", data: { kind: "invalid_request" } },
+    }
+    const internal = {
+      jsonrpc: "2.0",
+      id: 3,
+      error: { code: -32010, message: "Internal error", data: { kind: "internal_error", correlation_id: "abc" } },
+    }
+
+    for (const envelope of [domain, protocol, internal]) {
+      expect(Schema.decodeUnknownSync(RpcEnvelopeFailure)(envelope)).toBeTruthy()
+    }
+    expect(() => Schema.decodeUnknownSync(RpcEnvelopeFailure)({ ...domain, extra: true })).toThrow()
   })
 
   test("keeps HTTP attachments exact and storage-path free", async () => {

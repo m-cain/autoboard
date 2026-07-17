@@ -1,6 +1,6 @@
 import { createConnection, type Socket } from "node:net"
 import { Schema } from "effect"
-import { SessionInitialize } from "@autoboard/contracts"
+import { RpcEnvelopeFailure, SessionInitialize } from "@autoboard/contracts"
 import { IndeterminateWriteError, RpcConnectionError, RpcError, RpcProtocolError } from "./rpc-error.js"
 
 const MAX_FRAME_BYTES = 4 * 1024 * 1024
@@ -238,7 +238,14 @@ export class RpcClient {
     const initializing = this.initializing.get(id)
     if (initializing) {
       this.initializing.delete(id)
-      if ("error" in message) initializing.reject(this.asRpcError(message.error))
+      if ("error" in message) {
+        try {
+          const error = this.decodeErrorEnvelope(message, id)
+          initializing.reject(new RpcError(error.code, error.message, error.data))
+        } catch (error) {
+          initializing.reject(error instanceof Error ? error : new RpcProtocolError("Invalid JSON-RPC error response"))
+        }
+      }
       else if (message.jsonrpc === "2.0" && "result" in message) {
         try {
           initializing.resolve(
@@ -258,7 +265,12 @@ export class RpcClient {
     this.pending.delete(id)
 
     if ("error" in message) {
-      pending.reject(this.asRpcError(message.error))
+      try {
+        const error = this.decodeErrorEnvelope(message, id)
+        pending.reject(new RpcError(error.code, error.message, error.data))
+      } catch (error) {
+        pending.reject(error instanceof Error ? error : new RpcProtocolError("Invalid JSON-RPC error response"))
+      }
       return
     }
     if (message.jsonrpc !== "2.0" || !("result" in message)) {
@@ -274,14 +286,24 @@ export class RpcClient {
     }
   }
 
-  private asRpcError(value: unknown): RpcError {
-    if (typeof value !== "object" || value === null) return new RpcError(-32603, "Malformed RPC error", value)
-    const error = value as { code?: unknown; message?: unknown; data?: unknown }
-    return new RpcError(
-      typeof error.code === "number" ? error.code : -32603,
-      typeof error.message === "string" ? error.message : "RPC error",
-      error.data,
-    )
+  private decodeErrorEnvelope(message: Record<string, unknown>, expectedId: number): {
+    code: number
+    message: string
+    data: unknown
+  } {
+    try {
+      const envelope = Schema.decodeUnknownSync(
+        RpcEnvelopeFailure as unknown as Schema.Schema<{
+          id: string | number | null
+          error: { code: number; message: string; data: unknown }
+        }, unknown, never>,
+      )(message)
+      if (envelope.id !== expectedId) throw new RpcProtocolError("JSON-RPC error response id does not match request")
+      return envelope.error
+    } catch (error) {
+      if (error instanceof RpcProtocolError) throw error
+      throw new RpcProtocolError(`Invalid JSON-RPC error envelope: ${String(error)}`)
+    }
   }
 
   private failProtocol(socket: Socket, message: string): void {

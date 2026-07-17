@@ -12,7 +12,7 @@ import {
   TicketDetailJsonSchema,
   TicketSummaryJsonSchema,
 } from "./domain.js"
-import { RpcFailureJsonSchema, RpcSuccessJsonSchema } from "./rpc.js"
+import { RpcEnvelopeFailureJsonSchema, RpcFailureJsonSchema, RpcSuccessJsonSchema } from "./rpc.js"
 
 const destination = join(fileURLToPath(new URL("../generated", import.meta.url)))
 
@@ -23,6 +23,7 @@ const schemas = {
   "project-board.schema.json": ProjectBoardJsonSchema,
   "project.schema.json": ProjectJsonSchema,
   "rpc-failure.schema.json": RpcFailureJsonSchema,
+  "rpc-envelope-failure.schema.json": RpcEnvelopeFailureJsonSchema,
   "rpc-success.schema.json": RpcSuccessJsonSchema,
   "ticket-detail.schema.json": TicketDetailJsonSchema,
   "ticket-summary.schema.json": TicketSummaryJsonSchema,

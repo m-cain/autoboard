@@ -22,7 +22,8 @@ export const exactStruct = <F extends Fields>(fields: F) =>
 
 export const UUID = pipe(Schema.UUID, Schema.brand("UUID"))
 export const Revision = pipe(Schema.Number, Schema.int(), Schema.positive())
-const utcTimestampPattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?Z$/
+const utcTimestampPattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?Z$/
+const utcTimestampJsonPattern = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
 const isUtcTimestamp = (value: string): boolean => {
   const match = utcTimestampPattern.exec(value)
   if (!match) return false
@@ -31,10 +32,9 @@ const isUtcTimestamp = (value: string): boolean => {
   const date = new Date(Date.UTC(year!, month! - 1, day!))
   return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day
 }
-const TimestampJsonSchema = pipe(Schema.String, Schema.pattern(utcTimestampPattern)).annotations({
-  jsonSchema: { format: "date-time" },
+export const Timestamp = pipe(Schema.String, Schema.filter(isUtcTimestamp)).annotations({
+  jsonSchema: { format: "date-time", pattern: utcTimestampJsonPattern },
 })
-export const Timestamp = pipe(TimestampJsonSchema, Schema.filter(isUtcTimestamp))
 export const Sha256 = pipe(Schema.String, Schema.pattern(/^[a-f0-9]{64}$/))
 
 export const ProjectState = Schema.Literal("active", "archived")
