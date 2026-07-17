@@ -36,6 +36,9 @@ defmodule Autoboard.Presenter do
       "assignee" => enum(ticket.assignee),
       "revision" => ticket.revision,
       "parent_ticket_id" => ticket.parent_ticket_id,
+      "blocked" => ticket.blocked || false,
+      "comment_count" => ticket.comment_count || 0,
+      "attachment_count" => ticket.attachment_count || 0,
       "labels" =>
         ticket.labels
         |> loaded_or_empty()
@@ -133,6 +136,11 @@ defmodule Autoboard.Presenter do
   defp current(nil), do: nil
   defp current(%Project{} = project), do: project(project)
   defp current(%Ticket{} = ticket), do: ticket_summary(ticket)
+  defp current(%Attachment{} = attachment), do: attachment(attachment)
+  defp current(%Ecto.Association.NotLoaded{}), do: nil
+  defp current(value) when is_struct(value), do: nil
+  defp current(value) when is_map(value), do: sanitize_current_map(value)
+  defp current(value) when is_list(value), do: Enum.map(value, &current/1)
   defp current(value), do: json_value(value)
   defp loaded_or_empty(%Ecto.Association.NotLoaded{}), do: []
   defp loaded_or_empty(labels), do: labels
@@ -145,7 +153,25 @@ defmodule Autoboard.Presenter do
   defp enum(value) when is_atom(value), do: Atom.to_string(value)
   defp enum(value), do: value
   defp datetime(nil), do: nil
-  defp datetime(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+
+  defp datetime(%DateTime{} = datetime) do
+    datetime
+    |> DateTime.to_unix(:microsecond)
+    |> DateTime.from_unix!(:microsecond)
+    |> DateTime.to_iso8601()
+  end
+
+  defp sanitize_current_map(value) do
+    Enum.reduce(value, %{}, fn {key, nested}, sanitized ->
+      key = to_string(key)
+
+      if key in ["managed_path", "__struct__", "__meta__"] do
+        sanitized
+      else
+        Map.put(sanitized, key, current(nested))
+      end
+    end)
+  end
 
   defp json_value(value) when is_map(value),
     do: Map.new(value, fn {key, nested} -> {to_string(key), json_value(nested)} end)

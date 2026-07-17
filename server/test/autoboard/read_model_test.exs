@@ -2,11 +2,13 @@ defmodule Autoboard.ReadModelTest do
   use Autoboard.DataCase, async: false
 
   alias Autoboard.Attachments
+  alias Autoboard.Activity.Event
   alias Autoboard.Auth.Context
   alias Autoboard.Comments
   alias Autoboard.Domain.Error
   alias Autoboard.Projects
   alias Autoboard.ReadModel
+  alias Autoboard.Repo
   alias Autoboard.Tickets
 
   setup do
@@ -33,6 +35,48 @@ defmodule Autoboard.ReadModelTest do
 
     assert {:ok, canceled} = ReadModel.canceled_tickets(ctx, project.key)
     assert Enum.map(canceled, & &1.id) == [fixture.canceled.id]
+  end
+
+  test "hydrates global triage and unscoped search with each ticket's own project", %{ctx: ctx} do
+    first_project = project_fixture(ctx, "FIRST")
+    second_project = project_fixture(ctx, "SECO")
+    first = ticket_fixture(ctx, first_project, %{title: "Shared searchable ticket"})
+    second = ticket_fixture(ctx, second_project, %{title: "Shared searchable ticket"})
+
+    assert {:ok, triage} = ReadModel.triage_tickets(ctx)
+    triage_identifiers = Map.new(triage, &{&1.id, &1.identifier})
+    assert triage_identifiers[first.id] == "FIRST-1"
+    assert triage_identifiers[second.id] == "SECO-1"
+
+    assert {:ok, search} = ReadModel.search_tickets(ctx, %{query: "SHARED SEARCHABLE"})
+
+    assert %{first.id => "FIRST-1", second.id => "SECO-1"} ==
+             Map.new(search, &{&1.id, &1.identifier})
+  end
+
+  test "adds batched summary state and counts without per-card queries", %{
+    ctx: ctx,
+    project: project,
+    fixture: fixture
+  } do
+    assert {:ok, board} = ReadModel.project_board(ctx, project.key)
+    [blocked] = board.columns["ready"]
+    assert blocked.blocked
+    assert blocked.comment_count == 1
+    assert blocked.attachment_count == 1
+
+    one_count =
+      count_queries(fn -> assert {:ok, _board} = ReadModel.project_board(ctx, project.key) end)
+
+    for number <- 1..5 do
+      ticket_fixture(ctx, project, %{title: "More board work #{number}", status: :ready})
+    end
+
+    many_count =
+      count_queries(fn -> assert {:ok, _board} = ReadModel.project_board(ctx, project.key) end)
+
+    assert one_count == many_count
+    assert fixture.blocked.id == blocked.id
   end
 
   test "returns a fully aggregated ticket detail with a bounded newest-first activity list", %{
@@ -68,6 +112,24 @@ defmodule Autoboard.ReadModelTest do
     assert length(detail.activity) <= 100
   end
 
+  test "returns exactly the newest 100 activity events", %{ctx: ctx, fixture: fixture} do
+    Enum.each(1..101, fn number ->
+      Repo.insert!(%Event{
+        actor: :codex,
+        event_type: "fixture.activity",
+        project_id: fixture.blocked.project_id,
+        ticket_id: fixture.blocked.id,
+        payload: %{"number" => number}
+      })
+    end)
+
+    assert {:ok, detail} = ReadModel.ticket_detail(ctx, fixture.blocked.id)
+    assert length(detail.activity) == 100
+    assert [newest | _] = detail.activity
+    assert newest.id == Repo.aggregate(Event, :max, :id)
+    assert List.last(detail.activity).id < newest.id
+  end
+
   test "loads ticket detail in a fixed query count rather than per relationship row", %{
     ctx: ctx,
     fixture: fixture
@@ -77,7 +139,49 @@ defmodule Autoboard.ReadModelTest do
         assert {:ok, _detail} = ReadModel.ticket_detail(ctx, fixture.blocked.id)
       end)
 
-    assert query_count == 9
+    assert query_count == 12
+  end
+
+  test "uses a constant query count for one or many actionable summaries", %{
+    ctx: ctx,
+    project: project
+  } do
+    ticket_fixture(ctx, project, %{title: "First actionable", status: :ready, assignee: :codex})
+
+    one_count =
+      count_queries(fn ->
+        assert {:ok, [_]} =
+                 ReadModel.actionable_tickets(ctx, %{project_id: project.id, limit: 100})
+      end)
+
+    for number <- 1..5 do
+      ticket_fixture(ctx, project, %{
+        title: "Actionable #{number}",
+        status: :ready,
+        assignee: :codex
+      })
+    end
+
+    many_count =
+      count_queries(fn ->
+        assert {:ok, actionable} =
+                 ReadModel.actionable_tickets(ctx, %{project_id: project.id, limit: 100})
+
+        assert length(actionable) == 6
+      end)
+
+    assert one_count == many_count
+  end
+
+  test "search treats percent, underscore, and backslash as literal substring characters", %{
+    ctx: ctx,
+    project: project
+  } do
+    literal = ticket_fixture(ctx, project, %{title: "100%_done\\now"})
+    _nearby = ticket_fixture(ctx, project, %{title: "100XAdoneXnow"})
+
+    assert {:ok, [match]} = ReadModel.search_tickets(ctx, %{query: "%_done\\"})
+    assert match.id == literal.id
   end
 
   test "searches title and description case-insensitively, caps results, and delegates actionable rules",

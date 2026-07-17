@@ -15,6 +15,9 @@ defmodule Autoboard.Tickets.Ticket do
   schema "tickets" do
     field(:number, :integer)
     field(:identifier, :string, virtual: true)
+    field(:blocked, :boolean, virtual: true, default: false)
+    field(:comment_count, :integer, virtual: true, default: 0)
+    field(:attachment_count, :integer, virtual: true, default: 0)
     field(:title, :string)
     field(:description, :string, default: "")
     field(:status, Ecto.Enum, values: @statuses, default: :triage)

@@ -16,7 +16,6 @@ defmodule Autoboard.ReadModel do
   alias Autoboard.Domain.Error
   alias Autoboard.Projects.Project
   alias Autoboard.Repo
-  alias Autoboard.Tickets
   alias Autoboard.Tickets.Dependency
   alias Autoboard.Tickets.Ticket
 
@@ -71,7 +70,7 @@ defmodule Autoboard.ReadModel do
         |> where([ticket], ticket.project_id == ^project.id and ticket.status in ^@board_statuses)
         |> ordered_tickets()
         |> Repo.all()
-        |> hydrate_tickets(project)
+        |> hydrate_tickets()
 
       {:ok,
        %{
@@ -95,7 +94,7 @@ defmodule Autoboard.ReadModel do
         |> where([ticket], ticket.project_id == ^project.id and ticket.status == :canceled)
         |> ordered_tickets()
         |> Repo.all()
-        |> hydrate_tickets(project)
+        |> hydrate_tickets()
 
       {:ok, tickets}
     end
@@ -107,7 +106,6 @@ defmodule Autoboard.ReadModel do
   def ticket_detail(%Context{} = ctx, ticket_ref) do
     with :ok <- authorize(ctx),
          {:ok, ticket} <- fetch_ticket(ticket_ref) do
-      project = ticket.project
       parent = ticket.parent_ticket_id && Repo.get(Ticket, ticket.parent_ticket_id)
 
       subtasks =
@@ -123,17 +121,18 @@ defmodule Autoboard.ReadModel do
 
       tickets =
         hydrate_tickets(
-          [ticket, parent | subtasks ++ blockers ++ blocked_tickets] |> Enum.reject(&is_nil/1),
-          project
+          [ticket, parent | subtasks ++ blockers ++ blocked_tickets]
+          |> Enum.reject(&is_nil/1)
         )
 
       tickets_by_id = Map.new(tickets, &{&1.id, &1})
+      ticket = Map.fetch!(tickets_by_id, ticket.id)
 
       {:ok,
        %{
-         project: project,
-         ticket: Map.fetch!(tickets_by_id, ticket.id),
-         labels: Map.fetch!(tickets_by_id, ticket.id).labels,
+         project: ticket.project,
+         ticket: ticket,
+         labels: ticket.labels,
          parent: ticket.parent_ticket_id && Map.get(tickets_by_id, ticket.parent_ticket_id),
          subtasks: ticket_refs(subtasks, tickets_by_id),
          blockers: ticket_refs(blockers, tickets_by_id),
@@ -141,7 +140,7 @@ defmodule Autoboard.ReadModel do
          comments: comments(ticket.id),
          attachments: attachments(ticket.id),
          activity: activity(ticket.id, @default_activity_limit),
-         blocked: Enum.any?(blockers, &(&1.status not in [:done, :canceled]))
+         blocked: ticket.blocked
        }}
     end
   end
@@ -155,12 +154,16 @@ defmodule Autoboard.ReadModel do
          {:ok, query} <- required_query(attrs),
          {:ok, project_id} <- optional_uuid(Map.get(attrs, "project_id"), :project_id),
          {:ok, limit} <- search_limit(Map.get(attrs, "limit")) do
-      pattern = "%#{query}%"
+      pattern = "%#{escape_like(query)}%"
 
       tickets =
         Ticket
         |> maybe_filter_project(project_id)
-        |> where([ticket], ilike(ticket.title, ^pattern) or ilike(ticket.description, ^pattern))
+        |> where(
+          [ticket],
+          fragment("? ILIKE ? ESCAPE E'\\\\'", ticket.title, ^pattern) or
+            fragment("? ILIKE ? ESCAPE E'\\\\'", ticket.description, ^pattern)
+        )
         |> ordered_tickets()
         |> limit(^limit)
         |> Repo.all()
@@ -174,11 +177,34 @@ defmodule Autoboard.ReadModel do
 
   @spec actionable_tickets(Context.t(), map()) :: {:ok, [Ticket.t()]} | {:error, Error.t()}
   def actionable_tickets(%Context{} = ctx, attrs) do
-    with :ok <- authorize(ctx) do
-      case Tickets.list_actionable(ctx, attrs) do
-        tickets when is_list(tickets) -> {:ok, tickets}
-        {:error, %Error{} = error} -> {:error, error}
-      end
+    with :ok <- authorize(ctx),
+         {:ok, attrs} <- canonical_attrs(attrs, ["project_id", "limit"]),
+         {:ok, project_id} <- optional_uuid(Map.get(attrs, "project_id"), :project_id),
+         {:ok, limit} <- actionable_limit(Map.get(attrs, "limit")) do
+      tickets =
+        from(ticket in Ticket, as: :ticket)
+        |> join(:inner, [ticket], project in Project, on: project.id == ticket.project_id)
+        |> where(
+          [ticket, project],
+          ticket.status == :ready and ticket.assignee == :codex and project.state == :active
+        )
+        |> maybe_filter_project(project_id)
+        |> without_unresolved_blockers()
+        |> without_non_terminal_subtasks()
+        |> order_by([ticket],
+          asc:
+            fragment(
+              "CASE ? WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END",
+              ticket.priority
+            ),
+          asc: ticket.inserted_at,
+          asc: ticket.id
+        )
+        |> limit(^limit)
+        |> Repo.all()
+        |> hydrate_tickets()
+
+      {:ok, tickets}
     end
   end
 
@@ -207,7 +233,7 @@ defmodule Autoboard.ReadModel do
         :error -> ticket_identifier_query(ticket_ref)
       end
 
-    ticket = query |> Repo.one() |> maybe_attach_project()
+    ticket = Repo.one(query)
     if ticket, do: {:ok, ticket}, else: not_found("ticket")
   end
 
@@ -227,13 +253,6 @@ defmodule Autoboard.ReadModel do
   end
 
   defp ticket_identifier_query(_ticket_ref), do: from(ticket in Ticket, where: false)
-
-  defp maybe_attach_project(nil), do: nil
-
-  defp maybe_attach_project(ticket) do
-    project = Repo.get!(Project, ticket.project_id)
-    %{ticket | project: project, identifier: ticket_identifier(ticket, project)}
-  end
 
   defp related_tickets(ticket_id, :blockers) do
     Repo.all(
@@ -285,18 +304,39 @@ defmodule Autoboard.ReadModel do
         )
       )
 
-  defp hydrate_tickets(tickets, project \\ nil)
-  defp hydrate_tickets([], _project), do: []
+  defp hydrate_tickets([]), do: []
 
-  defp hydrate_tickets(tickets, project) do
+  defp hydrate_tickets(tickets) do
     tickets = Enum.uniq_by(tickets, & &1.id)
-    project = project || Repo.get!(Project, hd(tickets).project_id)
+    ticket_ids = Enum.map(tickets, & &1.id)
+
+    projects_by_id =
+      tickets
+      |> Enum.map(& &1.project_id)
+      |> Enum.uniq()
+      |> then(fn project_ids ->
+        Repo.all(from(project in Project, where: project.id in ^project_ids))
+      end)
+      |> Map.new(&{&1.id, &1})
+
+    blocked_ids = unresolved_blocked_ticket_ids(ticket_ids)
+    comment_counts = association_counts(Comment, ticket_ids)
+    attachment_counts = association_counts(Attachment, ticket_ids)
 
     tickets
-    |> Enum.map(&%{&1 | project: project, identifier: ticket_identifier(&1, project)})
     |> Repo.preload(:labels)
     |> Enum.map(fn ticket ->
-      %{ticket | labels: Enum.sort_by(ticket.labels, &String.downcase(&1.name))}
+      project = Map.fetch!(projects_by_id, ticket.project_id)
+
+      %{
+        ticket
+        | project: project,
+          identifier: ticket_identifier(ticket, project),
+          labels: Enum.sort_by(ticket.labels, &String.downcase(&1.name)),
+          blocked: MapSet.member?(blocked_ids, ticket.id),
+          comment_count: Map.get(comment_counts, ticket.id, 0),
+          attachment_count: Map.get(attachment_counts, ticket.id, 0)
+      }
     end)
   end
 
@@ -312,6 +352,61 @@ defmodule Autoboard.ReadModel do
 
   defp maybe_filter_project(query, project_id),
     do: where(query, [ticket], ticket.project_id == ^project_id)
+
+  defp unresolved_blocked_ticket_ids(ticket_ids) do
+    ticket_ids
+    |> then(fn ticket_ids ->
+      Repo.all(
+        from(dependency in Dependency,
+          join: blocker in Ticket,
+          on: blocker.id == dependency.blocker_ticket_id,
+          where:
+            dependency.blocked_ticket_id in ^ticket_ids and
+              blocker.status not in [:done, :canceled],
+          select: dependency.blocked_ticket_id,
+          distinct: true
+        )
+      )
+    end)
+    |> MapSet.new()
+  end
+
+  defp association_counts(schema, ticket_ids) do
+    Repo.all(
+      from(record in schema,
+        where: record.ticket_id in ^ticket_ids,
+        group_by: record.ticket_id,
+        select: {record.ticket_id, count(record.id)}
+      )
+    )
+    |> Map.new()
+  end
+
+  defp without_unresolved_blockers(query) do
+    blockers =
+      from(dependency in Dependency,
+        join: blocker in Ticket,
+        on: blocker.id == dependency.blocker_ticket_id,
+        where:
+          dependency.blocked_ticket_id == parent_as(:ticket).id and
+            blocker.status not in [:done, :canceled],
+        select: 1
+      )
+
+    where(query, [_ticket], not exists(blockers))
+  end
+
+  defp without_non_terminal_subtasks(query) do
+    subtasks =
+      from(subtask in Ticket,
+        where:
+          subtask.parent_ticket_id == parent_as(:ticket).id and
+            subtask.status not in [:done, :canceled],
+        select: 1
+      )
+
+    where(query, [_ticket], not exists(subtasks))
+  end
 
   defp canonical_attrs(attrs, allowed) when is_map(attrs) do
     attrs = Map.new(attrs, fn {key, value} -> {to_string(key), value} end)
@@ -341,6 +436,20 @@ defmodule Autoboard.ReadModel do
 
   defp search_limit(_limit),
     do: validation_error(:limit, "must be an integer from 1 to #{@max_search_limit}")
+
+  defp actionable_limit(nil), do: {:ok, 25}
+
+  defp actionable_limit(limit) when is_integer(limit) and limit in 1..100, do: {:ok, limit}
+
+  defp actionable_limit(_limit),
+    do: validation_error(:limit, "must be an integer from 1 to 100")
+
+  defp escape_like(query) do
+    query
+    |> String.replace("\\", "\\\\")
+    |> String.replace("%", "\\%")
+    |> String.replace("_", "\\_")
+  end
 
   defp authorize(%Context{scope: :global, actor: actor}) when actor in [:me, :codex], do: :ok
   defp authorize(_ctx), do: unauthorized()
