@@ -161,6 +161,7 @@ defmodule Autoboard.RPC.ListenerTest do
         %{
           "version" => 1,
           "pid" => :os.getpid() |> List.to_string(),
+          "listener_pid" => "<0.0.0>",
           "nonce" => Ecto.UUID.generate(),
           "identity" => [
             stat.major_device,
@@ -201,6 +202,34 @@ defmodule Autoboard.RPC.ListenerTest do
     assert eventually(fn -> :sys.get_state(listener).acceptor != state.acceptor end)
     assert {:ok, socket} = Autoboard.RPCClient.connect(path)
     :ok = :gen_tcp.close(socket)
+  end
+
+  test "reclaims a dead listener marker when its supervisor restarts it" do
+    path = socket_path("listener-restart")
+    {:ok, supervisor} = Supervisor.start_link([{Listener, path: path}], strategy: :one_for_one)
+    [{Listener, listener, :worker, _}] = Supervisor.which_children(supervisor)
+
+    on_exit(fn ->
+      if Process.alive?(supervisor), do: catch_exit(Supervisor.stop(supervisor))
+    end)
+
+    Process.exit(listener, :kill)
+
+    assert eventually(fn ->
+             [{Listener, replacement, :worker, _}] = Supervisor.which_children(supervisor)
+             replacement != listener and Process.alive?(replacement)
+           end)
+
+    assert eventually(fn ->
+             case Autoboard.RPCClient.connect(path) do
+               {:ok, socket} ->
+                 :gen_tcp.close(socket)
+                 true
+
+               _ ->
+                 false
+             end
+           end)
   end
 
   test "removes its owned endpoint when its supervisor shuts down" do
@@ -267,6 +296,7 @@ defmodule Autoboard.RPC.ListenerTest do
         Jason.encode!(%{
           "version" => 1,
           "pid" => "999999",
+          "listener_pid" => "<0.0.0>",
           "nonce" => Ecto.UUID.generate(),
           "identity" => identity
         })
@@ -339,6 +369,7 @@ defmodule Autoboard.RPC.ListenerTest do
     %{
       "version" => 1,
       "pid" => "999999",
+      "listener_pid" => "<0.0.0>",
       "nonce" => Ecto.UUID.generate(),
       "identity" => [1, 0, 1, 0o140000, 501]
     }
@@ -359,6 +390,7 @@ defmodule Autoboard.RPC.ListenerTest do
       %{
         "version" => 1,
         "pid" => "999999",
+        "listener_pid" => "<0.0.0>",
         "nonce" => Ecto.UUID.generate(),
         "identity" => [
           stat.major_device,

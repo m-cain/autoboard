@@ -146,7 +146,7 @@ defmodule Autoboard.RPC.Listener do
 
   defp reclaim_or_reject(path, marker) do
     with {:ok, record} <- read_marker(marker),
-         false <- pid_alive?(record["pid"]),
+         false <- owner_alive?(record),
          :ok <- reclaim_recorded_socket(path, record),
          {:ok, owner} <- install_provisional_owner(marker) do
       {:ok, owner}
@@ -190,7 +190,8 @@ defmodule Autoboard.RPC.Listener do
       marker: marker,
       claim: marker <> ".claim",
       nonce: Ecto.UUID.generate(),
-      identity: nil
+      identity: nil,
+      listener_pid: listener_pid()
     }
 
     case atomic_write_marker(marker, marker_record(owner)) do
@@ -287,6 +288,7 @@ defmodule Autoboard.RPC.Listener do
     do: %{
       "version" => @marker_version,
       "pid" => os_pid(),
+      "listener_pid" => owner.listener_pid,
       "nonce" => owner.nonce,
       "identity" => if(owner.identity, do: Tuple.to_list(owner.identity), else: nil)
     }
@@ -305,15 +307,21 @@ defmodule Autoboard.RPC.Listener do
   defp trusted_marker_stat?(_), do: false
 
   defp valid_marker_record?(record) when is_map(record) do
-    MapSet.new(Map.keys(record)) == MapSet.new(["version", "pid", "nonce", "identity"]) and
+    MapSet.new(Map.keys(record)) ==
+      MapSet.new(["version", "pid", "listener_pid", "nonce", "identity"]) and
       record["version"] == @marker_version and valid_pid?(record["pid"]) and
-      valid_nonce?(record["nonce"]) and
+      valid_listener_pid?(record["listener_pid"]) and valid_nonce?(record["nonce"]) and
       valid_identity?(record["identity"])
   end
 
   defp valid_marker_record?(_), do: false
   defp valid_pid?(pid) when is_binary(pid), do: String.match?(pid, ~r/^[1-9][0-9]{0,9}$/)
   defp valid_pid?(_), do: false
+
+  defp valid_listener_pid?(pid) when is_binary(pid),
+    do: String.match?(pid, ~r/^<[0-9]+\.[0-9]+\.[0-9]+>$/)
+
+  defp valid_listener_pid?(_), do: false
   defp valid_nonce?(nonce) when is_binary(nonce), do: match?({:ok, _}, Ecto.UUID.cast(nonce))
   defp valid_nonce?(_), do: false
   defp valid_identity?(nil), do: true
@@ -379,6 +387,22 @@ defmodule Autoboard.RPC.Listener do
   end
 
   defp pid_alive?(_), do: true
+
+  defp owner_alive?(%{"pid" => pid, "listener_pid" => listener_pid}) do
+    pid_alive?(pid) and (pid != os_pid() or listener_alive?(listener_pid))
+  end
+
+  defp owner_alive?(_), do: true
+
+  defp listener_alive?(listener_pid) do
+    try do
+      listener_pid |> String.to_charlist() |> :erlang.list_to_pid() |> Process.alive?()
+    rescue
+      ArgumentError -> true
+    end
+  end
+
+  defp listener_pid, do: self() |> :erlang.pid_to_list() |> List.to_string()
 
   defp current_uid,
     do: System.cmd("id", ["-u"]) |> elem(0) |> String.trim() |> String.to_integer()
