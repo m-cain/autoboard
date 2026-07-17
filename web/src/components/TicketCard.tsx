@@ -1,9 +1,10 @@
-import { Link } from "react-router"
+import { Link, useLocation } from "react-router"
 import type { TicketSummary } from "@autoboard/contracts"
 
-export const TicketCard = ({ ticket }: { readonly ticket: TicketSummary }) => (
-  <article className="ticket-card">
-    <Link className="ticket-card__title" to={`/tickets/${encodeURIComponent(ticket.identifier)}`}>
+export const TicketCard = ({ ticket }: { readonly ticket: TicketSummary }) => {
+  const location = useLocation()
+  return <article className="ticket-card">
+    <Link className="ticket-card__title" to={`/tickets/${encodeURIComponent(ticket.identifier)}`} state={{ backgroundLocation: location }}>
       {ticket.title}
     </Link>
     <p className="ticket-card__identifier">{ticket.identifier}</p>
@@ -17,4 +18,4 @@ export const TicketCard = ({ ticket }: { readonly ticket: TicketSummary }) => (
       <span>{ticket.attachment_count} {ticket.attachment_count === 1 ? "attachment" : "attachments"}</span>
     </div>
   </article>
-)
+}

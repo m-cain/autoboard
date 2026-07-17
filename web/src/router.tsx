@@ -1,6 +1,6 @@
 /* oxlint-disable react/only-export-components -- React Router route configuration and its loader-aware views share this module. */
 import { Effect } from "effect"
-import { createBrowserRouter, Link, useLoaderData, useRouteError, useRouteLoaderData, type RouteObject } from "react-router"
+import { createBrowserRouter, Link, useLoaderData, useLocation, useRouteError, useRouteLoaderData, type RouteObject } from "react-router"
 import { ApiClient, HttpError, RequestAbortedError, createApiClient, type ApiClientService } from "./api/client.js"
 import { RouterAppShell } from "./layout/AppShell.js"
 import { createApiRunner } from "./runtime.js"
@@ -8,10 +8,13 @@ import { ProjectsPage } from "./pages/ProjectsPage.js"
 import { ProjectBoardPage } from "./pages/ProjectBoardPage.js"
 import { TriagePage } from "./pages/TriagePage.js"
 import { CanceledPage } from "./pages/CanceledPage.js"
-import type { Project, ProjectBoard, TicketSummary } from "@autoboard/contracts"
+import { TicketDetailPage } from "./pages/TicketDetailPage.js"
+import { TicketDrawer } from "./components/TicketDrawer.js"
+import type { Project, ProjectBoard, TicketDetail, TicketSummary } from "@autoboard/contracts"
 
 type TicketListData = { readonly tickets: readonly TicketSummary[] }
 type RootData = { readonly projects: { readonly active: readonly Project[]; readonly archived: readonly Project[] }; readonly triage: TicketListData }
+export type TicketRouteData = { readonly ticket: TicketDetail; readonly board: ProjectBoard }
 
 const projectKey = (params: Record<string, string | undefined>): string => {
   if (!params.key) throw new HttpError({ status: 404, message: "Project not found" })
@@ -32,6 +35,24 @@ const TriageRoute = () => {
   return <TriagePage tickets={root.triage.tickets} projects={root.projects.active} />
 }
 const BoardRoute = () => <ProjectBoardPage board={useLoaderData()} />
+const ticketIdentifier = (params: Record<string, string | undefined>): string => {
+  if (!params.identifier) throw new HttpError({ status: 404, message: "Ticket not found" })
+  return params.identifier
+}
+const backgroundPath = (state: unknown): string | undefined => {
+  if (typeof state !== "object" || state === null || !("backgroundLocation" in state)) return undefined
+  const background = state.backgroundLocation
+  if (typeof background !== "object" || background === null || !("pathname" in background) || typeof background.pathname !== "string") return undefined
+  const search = "search" in background && typeof background.search === "string" ? background.search : ""
+  const hash = "hash" in background && typeof background.hash === "string" ? background.hash : ""
+  return `${background.pathname}${search}${hash}`
+}
+const TicketRoute = () => {
+  const data = useLoaderData() as TicketRouteData
+  const closeTo = backgroundPath(useLocation().state)
+  if (!closeTo) return <TicketDetailPage ticket={data.ticket} />
+  return <div className="ticket-drawer-layer"><div aria-hidden="true"><ProjectBoardPage board={data.board} /></div><TicketDrawer closeTo={closeTo}><TicketDetailPage ticket={data.ticket} /></TicketDrawer></div>
+}
 const CanceledRoute = () => {
   const { project, tickets } = useLoaderData() as { readonly project: Project; readonly tickets: readonly TicketSummary[] }
   return <CanceledPage project={project} tickets={tickets} />
@@ -63,6 +84,13 @@ export const createAppRoutes = (client: ApiClientService): RouteObject[] => {
           const [board, canceled] = await Promise.all([fromApi<ProjectBoard, unknown>((service) => service.getProjectBoard(key, request.signal)), fromApi<TicketListData, unknown>((service) => service.getCanceledTickets(key, request.signal))])
           return { project: board.project, tickets: canceled.tickets }
         }, Component: CanceledRoute,
+      },
+      {
+        id: "ticket", path: "tickets/:identifier", loader: async ({ params, request }): Promise<TicketRouteData> => {
+          const ticket = await fromApi<TicketDetail, unknown>((service) => service.getTicket(ticketIdentifier(params), request.signal))
+          const board = await fromApi<ProjectBoard, unknown>((service) => service.getProjectBoard(ticket.project.key, request.signal))
+          return { ticket, board }
+        }, Component: TicketRoute,
       },
       { path: "triage", Component: TriageRoute },
       { path: "*", Component: NotFoundPage },

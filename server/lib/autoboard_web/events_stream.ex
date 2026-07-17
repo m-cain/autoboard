@@ -11,7 +11,7 @@ defmodule AutoboardWeb.EventsStream do
 
   @spec stream(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def stream(conn, options \\ []) do
-    with {:ok, last_id} <- parse_last_event_id(get_req_header(conn, "last-event-id")),
+    with {:ok, last_id} <- parse_last_event_id(last_event_ids(conn)),
          :ok <- Activity.subscribe() do
       try do
         stream_subscribed(conn, last_id, options)
@@ -43,9 +43,12 @@ defmodule AutoboardWeb.EventsStream do
   @spec format_event(map() | struct()) :: String.t()
   def format_event(event) do
     payload = %{
+      "id" => event.id,
       "event_type" => event.event_type,
+      "actor" => format_actor(Map.get(event, :actor, :system)),
       "project_id" => event.project_id,
       "ticket_id" => event.ticket_id,
+      "payload" => Map.get(event, :payload, %{}),
       "inserted_at" => format_timestamp(event.inserted_at)
     }
 
@@ -209,4 +212,25 @@ defmodule AutoboardWeb.EventsStream do
   defp context, do: Context.global(:me)
   defp format_timestamp(%DateTime{} = timestamp), do: DateTime.to_iso8601(timestamp)
   defp format_timestamp(timestamp), do: timestamp
+  defp format_actor(actor) when is_atom(actor), do: Atom.to_string(actor)
+  defp format_actor(actor) when is_binary(actor), do: actor
+
+  # Native EventSource automatically sends Last-Event-ID when it owns a retry.
+  # A client-controlled exponential reconnect cannot set arbitrary headers, so
+  # accept the equivalent query cursor only when the header is absent.
+  defp last_event_ids(conn) do
+    case get_req_header(conn, "last-event-id") do
+      [] ->
+        case conn
+             |> fetch_query_params()
+             |> Map.get(:query_params, %{})
+             |> Map.get("last_event_id") do
+          nil -> []
+          value -> [value]
+        end
+
+      headers ->
+        headers
+    end
+  end
 end

@@ -17,16 +17,18 @@ defmodule AutoboardWeb.EventsStreamTest do
     assert {:error, :invalid_last_event_id} = EventsStream.parse_last_event_id(["1", "2"])
   end
 
-  test "formats the minimum activity invalidation payload" do
+  test "formats the complete ActivityEvent payload used by the browser contract" do
     event = %{
       id: 8,
       event_type: "ticket.updated",
+      actor: :codex,
       project_id: "project",
       ticket_id: nil,
+      payload: %{"changed" => ["status"]},
       inserted_at: ~U[2026-07-17 12:00:00Z]
     }
 
-    assert "id: 8\nevent: activity\ndata: {\"event_type\":\"ticket.updated\",\"inserted_at\":\"2026-07-17T12:00:00Z\",\"project_id\":\"project\",\"ticket_id\":null}\n\n" =
+    assert "id: 8\nevent: activity\ndata: {\"actor\":\"codex\",\"event_type\":\"ticket.updated\",\"id\":8,\"inserted_at\":\"2026-07-17T12:00:00Z\",\"payload\":{\"changed\":[\"status\"]},\"project_id\":\"project\",\"ticket_id\":null}\n\n" =
              EventsStream.format_event(event)
   end
 
