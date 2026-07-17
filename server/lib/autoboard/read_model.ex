@@ -44,6 +44,13 @@ defmodule Autoboard.ReadModel do
 
   def list_projects(_ctx), do: unauthorized()
 
+  @spec project(Context.t(), String.t()) :: {:ok, Project.t()} | {:error, Error.t()}
+  def project(%Context{} = ctx, project_ref) do
+    with :ok <- authorize(ctx), do: fetch_project(project_ref)
+  end
+
+  def project(_ctx, _project_ref), do: unauthorized()
+
   @spec triage_tickets(Context.t()) :: {:ok, [Ticket.t()]} | {:error, Error.t()}
   def triage_tickets(%Context{} = ctx) do
     with :ok <- authorize(ctx) do

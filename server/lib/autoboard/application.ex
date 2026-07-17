@@ -10,7 +10,8 @@ defmodule Autoboard.Application do
     children = [
       Autoboard.Repo,
       {Registry, keys: :duplicate, name: Autoboard.Activity.Registry},
-      Autoboard.Attachments.Cleanup
+      Autoboard.Attachments.Cleanup,
+      Autoboard.RPC.Listener
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
