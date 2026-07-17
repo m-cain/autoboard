@@ -85,6 +85,8 @@ A project has:
 
 Archiving hides a project from the active project list but preserves all related records and keeps it browsable in the archived section. Restoring returns it to the active list.
 
+Archived projects are read-only at the domain boundary. Every mutation beneath an archived project is rejected until the project is restored.
+
 ### Tickets
 
 A ticket has:
@@ -122,7 +124,7 @@ Comments are append-only Markdown records attached to a ticket. The author is de
 
 Attachments belong to tickets and contain an opaque UUID, original filename, media type, byte size, SHA-256 checksum, managed storage path, actor, and timestamp. The application copies an absolute source path into managed storage atomically. The default maximum is 50 MB and is configurable.
 
-Text attachments can be returned inline to MCP within its response-size limit. Other attachments return metadata and the managed local path so local Codex tools can inspect them. The HTTP API streams attachment downloads by opaque ID.
+Text attachments up to 262,144 bytes can be returned inline to MCP. Larger or non-text attachments return metadata and the managed local path so local Codex tools can inspect them. The HTTP API streams attachment downloads by opaque ID.
 
 ### Activity
 
@@ -229,6 +231,7 @@ Autoboard applies every authorized MCP write immediately. Users who want confirm
 Bandit serves compiled React assets and these loopback-only endpoints:
 
 - `GET /api/v1/projects`
+- `GET /api/v1/triage`
 - `GET /api/v1/projects/:key/board`
 - `GET /api/v1/projects/:key/canceled`
 - `GET /api/v1/tickets/:identifier`
