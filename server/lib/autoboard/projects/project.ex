@@ -24,6 +24,7 @@ defmodule Autoboard.Projects.Project do
     project
     |> cast(attrs, [:key, :name, :description])
     |> reject_unsupported_create_fields(attrs)
+    |> validate_text_field_types(attrs)
     |> validate_required([:key, :name])
     |> validate_key()
     |> validate_name()
@@ -37,6 +38,7 @@ defmodule Autoboard.Projects.Project do
     project
     |> cast(attrs, [:name, :description])
     |> reject_unsupported_fields(attrs)
+    |> validate_text_field_types(attrs)
     |> validate_name()
     |> validate_change(:description, fn :description, description ->
       if is_binary(description), do: [], else: [description: "must be a string"]
@@ -81,7 +83,27 @@ defmodule Autoboard.Projects.Project do
         true -> []
       end
     end)
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, fn
+      name when is_binary(name) -> String.trim(name)
+      name -> name
+    end)
+  end
+
+  defp validate_text_field_types(changeset, attrs) do
+    Enum.reduce([:name, :description], changeset, fn field, changeset ->
+      case supplied_attribute(attrs, field) do
+        {:ok, value} when is_binary(value) -> changeset
+        {:ok, _value} -> add_error(changeset, field, "must be a string")
+        :error -> changeset
+      end
+    end)
+  end
+
+  defp supplied_attribute(attrs, field) do
+    case Map.fetch(attrs, field) do
+      {:ok, _value} = result -> result
+      :error -> Map.fetch(attrs, Atom.to_string(field))
+    end
   end
 
   defp reject_unsupported_fields(changeset, attrs) do

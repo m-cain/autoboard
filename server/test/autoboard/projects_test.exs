@@ -67,6 +67,47 @@ defmodule Autoboard.ProjectsTest do
     assert Repo.aggregate(Event, :count) == 0
   end
 
+  test "project creation rejects nil and non-string text attributes atomically", %{ctx: ctx} do
+    for {field, value} <- invalid_text_attributes() do
+      attrs = Map.put(%{key: "AUTO", name: "Autoboard", description: ""}, field, value)
+      assert_invalid_text_field(Projects.create(ctx, attrs), normalize_field(field))
+    end
+
+    for {field, value} <- invalid_text_attributes() do
+      attrs =
+        Map.put(
+          %{"key" => "AUTO", "name" => "Autoboard", "description" => ""},
+          Atom.to_string(field),
+          value
+        )
+
+      assert_invalid_text_field(Projects.create(ctx, attrs), normalize_field(field))
+    end
+
+    assert Repo.aggregate(Project, :count) == 0
+    assert Repo.aggregate(Event, :count) == 0
+  end
+
+  test "project updates reject nil and non-string text attributes without mutation", %{ctx: ctx} do
+    project = project_fixture(ctx)
+
+    for {field, value} <- invalid_text_attributes() do
+      assert_invalid_text_field(
+        Projects.update(ctx, project.id, project.revision, %{field => value}),
+        normalize_field(field)
+      )
+    end
+
+    for {field, value} <- invalid_text_attributes() do
+      assert_invalid_text_field(
+        Projects.update(ctx, project.id, project.revision, %{Atom.to_string(field) => value}),
+        normalize_field(field)
+      )
+    end
+
+    assert_unchanged_project(ctx, project)
+  end
+
   test "create and update validate non-map attrs", %{ctx: ctx} do
     project = project_fixture(ctx)
 
@@ -261,5 +302,17 @@ defmodule Autoboard.ProjectsTest do
   defp assert_invalid_revision(result) do
     assert {:error, %Error{kind: :validation_failed, fields: %{expected_revision: [_message]}}} =
              result
+  end
+
+  defp invalid_text_attributes do
+    [name: nil, name: 42, description: nil, description: 42]
+  end
+
+  defp normalize_field(field) when is_atom(field), do: field
+  defp normalize_field(field), do: String.to_existing_atom(field)
+
+  defp assert_invalid_text_field(result, field) do
+    assert {:error, %Error{kind: :validation_failed, fields: fields}} = result
+    assert Map.has_key?(fields, field)
   end
 end
