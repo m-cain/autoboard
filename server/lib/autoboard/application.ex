@@ -7,7 +7,11 @@ defmodule Autoboard.Application do
 
   @impl true
   def start(_type, _args) do
-    children = [Autoboard.Repo]
+    children = [
+      Autoboard.Repo,
+      {Registry, keys: :duplicate, name: Autoboard.Activity.Registry},
+      Autoboard.Attachments.Cleanup
+    ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options

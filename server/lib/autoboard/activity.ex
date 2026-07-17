@@ -1,7 +1,12 @@
 defmodule Autoboard.Activity do
+  import Ecto.Query
+
+  alias Autoboard.Activity.Broadcaster
   alias Autoboard.Activity.Event
   alias Autoboard.Auth.Context
   alias Autoboard.Repo
+
+  @registry Autoboard.Activity.Registry
 
   @spec append(Context.t(), String.t(), Ecto.UUID.t(), Ecto.UUID.t() | nil, map()) ::
           {:ok, Event.t()} | {:error, Ecto.Changeset.t()}
@@ -19,4 +24,40 @@ defmodule Autoboard.Activity do
     })
     |> Repo.insert()
   end
+
+  @spec commit((-> {term(), [Event.t()]})) :: {:ok, term()} | {:error, term()}
+  def commit(fun) when is_function(fun, 0) do
+    case Repo.transaction(fun) do
+      {:ok, {result, events}} when is_list(events) ->
+        Enum.each(events, &broadcast/1)
+        {:ok, result}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @spec subscribe() :: :ok | {:error, {:already_registered, pid()}}
+  def subscribe do
+    case Registry.register(@registry, :activity, nil) do
+      {:ok, _pid} -> :ok
+      error -> error
+    end
+  end
+
+  @spec unsubscribe() :: :ok
+  def unsubscribe, do: Registry.unregister(@registry, :activity)
+
+  @spec broadcast(Event.t()) :: :ok
+  def broadcast(%Event{} = event), do: Broadcaster.broadcast(event)
+
+  @spec replay_after(Context.t(), non_neg_integer()) ::
+          {:ok, [Event.t()]} | {:error, :unauthorized}
+  def replay_after(%Context{scope: :global, actor: actor}, activity_id)
+      when actor in [:me, :codex] and is_integer(activity_id) and activity_id >= 0 do
+    {:ok,
+     Repo.all(from(event in Event, where: event.id > ^activity_id, order_by: [asc: event.id]))}
+  end
+
+  def replay_after(_ctx, _activity_id), do: {:error, :unauthorized}
 end

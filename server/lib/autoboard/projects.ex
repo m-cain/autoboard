@@ -13,8 +13,8 @@ defmodule Autoboard.Projects do
   def create(%Context{} = ctx, attrs) do
     with :ok <- authorize(ctx),
          :ok <- validate_attrs(attrs),
-         {:ok, {project, _events}} <-
-           Repo.transaction(fn ->
+         {:ok, project} <-
+           Activity.commit(fn ->
              with {:ok, project} <- Repo.insert(Project.create_changeset(%Project{}, attrs)),
                   {:ok, event} <-
                     Activity.append(ctx, "project.created", project.id, nil, %{
@@ -81,8 +81,8 @@ defmodule Autoboard.Projects do
     with :ok <- authorize(ctx),
          {:ok, id} <- cast_project_id(id),
          :ok <- validate_expected_revision(expected_revision),
-         {:ok, {project, _events}} <-
-           Repo.transaction(fn ->
+         {:ok, project} <-
+           Activity.commit(fn ->
              project = locked_project(id)
 
              with {:ok, project} <- require_project(project),
@@ -159,8 +159,8 @@ defmodule Autoboard.Projects do
          payload_fun,
          require_active? \\ true
        ) do
-    with {:ok, {project, _events}} <-
-           Repo.transaction(fn ->
+    with {:ok, project} <-
+           Activity.commit(fn ->
              project = locked_project(id)
 
              with {:ok, project} <- require_project(project),

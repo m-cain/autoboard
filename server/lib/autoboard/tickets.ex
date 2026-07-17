@@ -25,7 +25,7 @@ defmodule Autoboard.Tickets do
          :ok <- valid_changeset(Ticket.create_changeset(%Ticket{}, attrs)) do
       labels = if labels == :not_supplied, do: [], else: labels
 
-      Repo.transaction(fn ->
+      Activity.commit(fn ->
         project = locked_project(project_id)
 
         with {:ok, project} <- require_project(project),
@@ -42,7 +42,7 @@ defmodule Autoboard.Tickets do
              {:ok, labels} <- resolve_labels(project.id, labels),
              :ok <- replace_labels(ticket.id, labels),
              ticket = present(ticket, project, labels),
-             {:ok, _event} <-
+             {:ok, event} <-
                Activity.append(
                  ctx,
                  "ticket.created",
@@ -50,7 +50,7 @@ defmodule Autoboard.Tickets do
                  ticket.id,
                  created_payload(ticket)
                ) do
-          ticket
+          {ticket, [event]}
         else
           {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
           {:error, %Error{} = error} -> Repo.rollback(error)
@@ -70,7 +70,7 @@ defmodule Autoboard.Tickets do
          {:ok, attrs} <- canonical_attrs(attrs),
          {:ok, labels} <- normalized_labels(attrs),
          :ok <- valid_changeset(Ticket.update_changeset(%Ticket{}, attrs)) do
-      Repo.transaction(fn ->
+      Activity.commit(fn ->
         project = id |> ticket_project_id() |> locked_project_if_present()
         ticket = locked_ticket(id)
 
@@ -89,7 +89,7 @@ defmodule Autoboard.Tickets do
              {:ok, updated_labels} <-
                maybe_replace_labels(updated.id, labels, current_labels, labels_changed?),
              updated = present(updated, project, updated_labels),
-             {:ok, _event} <-
+             {:ok, event} <-
                Activity.append(
                  ctx,
                  "ticket.updated",
@@ -103,7 +103,7 @@ defmodule Autoboard.Tickets do
                    labels_changed?
                  )
                ) do
-          updated
+          {updated, [event]}
         else
           {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
           {:error, %Error{} = error} -> Repo.rollback(error)
@@ -122,7 +122,7 @@ defmodule Autoboard.Tickets do
          {:ok, id} <- cast_uuid(id, :id),
          :ok <- validate_expected_revision(expected_revision),
          {:ok, status} <- normalize_status(status) do
-      Repo.transaction(fn ->
+      Activity.commit(fn ->
         project = id |> ticket_project_id() |> locked_project_if_present()
         ticket = locked_ticket(id)
 
@@ -259,7 +259,7 @@ defmodule Autoboard.Tickets do
   def list_actionable(_ctx, _attrs), do: unauthorized()
 
   defp mutate_dependency(ctx, blocked_ticket_id, blocker_ticket_id, expected_revision, operation) do
-    Repo.transaction(fn ->
+    Activity.commit(fn ->
       project = blocked_ticket_id |> ticket_project_id() |> locked_project_if_present()
       blocked_ticket = locked_ticket(blocked_ticket_id)
 
@@ -691,13 +691,13 @@ defmodule Autoboard.Tickets do
   defp transaction_result({:error, %Ecto.Changeset{} = changeset}),
     do: {:error, validation_error(changeset)}
 
-  defp dependency_transaction_result({:ok, {ticket, _events}}), do: {:ok, ticket}
+  defp dependency_transaction_result({:ok, ticket}), do: {:ok, ticket}
   defp dependency_transaction_result({:error, %Error{} = error}), do: {:error, error}
 
   defp dependency_transaction_result({:error, %Ecto.Changeset{} = changeset}),
     do: {:error, validation_error(changeset)}
 
-  defp transition_transaction_result({:ok, {ticket, _events}}), do: {:ok, ticket}
+  defp transition_transaction_result({:ok, ticket}), do: {:ok, ticket}
   defp transition_transaction_result({:error, %Error{} = error}), do: {:error, error}
 
   defp transition_transaction_result({:error, %Ecto.Changeset{} = changeset}),
