@@ -3,6 +3,7 @@ defmodule Autoboard.Tickets do
 
   alias Autoboard.Activity
   alias Autoboard.Auth.Context
+  alias Autoboard.Auth.Scope
   alias Autoboard.Domain.Error
   alias Autoboard.Projects
   alias Autoboard.Projects.Project
@@ -16,7 +17,7 @@ defmodule Autoboard.Tickets do
 
   @spec create(Context.t(), map()) :: result(Ticket.t())
   def create(%Context{} = ctx, attrs) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize(ctx),
          {:ok, attrs} <- canonical_attrs(attrs),
          {:ok, project_id} <- cast_uuid(Map.get(attrs, "project_id"), :project_id),
          {:ok, parent_ticket_id} <-
@@ -26,11 +27,11 @@ defmodule Autoboard.Tickets do
       labels = if labels == :not_supplied, do: [], else: labels
 
       Activity.commit(fn ->
-        project = locked_project(project_id)
+        project = locked_project(ctx, project_id)
 
         with {:ok, project} <- require_project(project),
              :ok <- Projects.ensure_active(project),
-             :ok <- validate_parent(parent_ticket_id, project.id),
+             :ok <- validate_parent(ctx, parent_ticket_id, project.id),
              {:ok, project} <- allocate_ticket_number(project),
              {:ok, ticket} <-
                %Ticket{}
@@ -39,9 +40,9 @@ defmodule Autoboard.Tickets do
                |> Ecto.Changeset.put_change(:parent_ticket_id, parent_ticket_id)
                |> Ecto.Changeset.put_change(:number, project.next_ticket_number - 1)
                |> Repo.insert(),
-             {:ok, labels} <- resolve_labels(project.id, labels),
+             {:ok, labels} <- resolve_labels(ctx, project.id, labels),
              :ok <- replace_labels(ticket.id, labels),
-             ticket = present(ticket, project, labels),
+             ticket = present(ctx, ticket, project, labels),
              {:ok, event} <-
                Activity.append(
                  ctx,
@@ -64,21 +65,21 @@ defmodule Autoboard.Tickets do
 
   @spec update(Context.t(), Ecto.UUID.t(), pos_integer(), map()) :: result(Ticket.t())
   def update(%Context{} = ctx, id, expected_revision, attrs) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize(ctx),
          {:ok, id} <- cast_uuid(id, :id),
          :ok <- validate_expected_revision(expected_revision),
          {:ok, attrs} <- canonical_attrs(attrs),
          {:ok, labels} <- normalized_labels(attrs),
          :ok <- valid_changeset(Ticket.update_changeset(%Ticket{}, attrs)) do
       Activity.commit(fn ->
-        project = id |> ticket_project_id() |> locked_project_if_present()
-        ticket = locked_ticket(id)
+        project = id |> ticket_project_id(ctx) |> locked_project_if_present(ctx)
+        ticket = locked_ticket(ctx, id)
 
         with {:ok, ticket} <- require_ticket(ticket),
              {:ok, project} <- require_project(project),
-             :ok <- require_revision(ticket, expected_revision),
+             :ok <- require_revision(ctx, ticket, expected_revision),
              :ok <- Projects.ensure_active(project),
-             current_labels = ticket_labels(ticket),
+             current_labels = ticket_labels(ctx, ticket),
              labels_changed? = labels_changed?(attrs, labels, current_labels),
              changeset = Ticket.update_changeset(ticket, attrs),
              :ok <- require_ticket_change(changeset, labels_changed?),
@@ -87,8 +88,8 @@ defmodule Autoboard.Tickets do
                |> Ecto.Changeset.put_change(:revision, ticket.revision + 1)
                |> Repo.update(),
              {:ok, updated_labels} <-
-               maybe_replace_labels(updated.id, labels, current_labels, labels_changed?),
-             updated = present(updated, project, updated_labels),
+               maybe_replace_labels(ctx, updated.id, labels, current_labels, labels_changed?),
+             updated = present(ctx, updated, project, updated_labels),
              {:ok, event} <-
                Activity.append(
                  ctx,
@@ -118,22 +119,22 @@ defmodule Autoboard.Tickets do
   @spec transition(Context.t(), Ecto.UUID.t(), pos_integer(), atom() | String.t()) ::
           result(Ticket.t())
   def transition(%Context{} = ctx, id, expected_revision, status) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize(ctx),
          {:ok, id} <- cast_uuid(id, :id),
          :ok <- validate_expected_revision(expected_revision),
          {:ok, status} <- normalize_status(status) do
       Activity.commit(fn ->
-        project = id |> ticket_project_id() |> locked_project_if_present()
-        ticket = locked_ticket(id)
+        project = id |> ticket_project_id(ctx) |> locked_project_if_present(ctx)
+        ticket = locked_ticket(ctx, id)
 
         with {:ok, ticket} <- require_ticket(ticket),
              {:ok, project} <- require_project(project),
-             :ok <- require_revision(ticket, expected_revision),
+             :ok <- require_revision(ctx, ticket, expected_revision),
              :ok <- Projects.ensure_active(project),
              :ok <- require_status_change(ticket, status),
              :ok <- transition_allowed(ctx, ticket, status),
              {:ok, updated} <- Repo.update(Ticket.transition_changeset(ticket, status)),
-             updated = present(updated, project, ticket_labels(ticket)),
+             updated = present(ctx, updated, project, ticket_labels(ctx, ticket)),
              {:ok, transition_event} <-
                Activity.append(ctx, "ticket.transitioned", project.id, updated.id, %{
                  "status" => %{
@@ -157,10 +158,10 @@ defmodule Autoboard.Tickets do
 
   @spec fetch(Context.t(), Ecto.UUID.t()) :: result(Ticket.t())
   def fetch(%Context{} = ctx, id) do
-    with :ok <- authorize(ctx),
+    with {:ok, query} <- Scope.tickets(ctx),
          {:ok, id} <- cast_uuid(id, :id),
-         {:ok, ticket} <- require_ticket(Repo.get(Ticket, id)) do
-      {:ok, present(ticket)}
+         {:ok, ticket} <- require_ticket(Repo.one(where(query, [ticket], ticket.id == ^id))) do
+      {:ok, present(ctx, ticket)}
     end
   end
 
@@ -168,17 +169,17 @@ defmodule Autoboard.Tickets do
 
   @spec search(Context.t(), map()) :: result([Ticket.t()])
   def search(%Context{} = ctx, attrs) do
-    with :ok <- authorize(ctx),
+    with {:ok, base_query} <- Scope.tickets(ctx),
          {:ok, attrs} <- canonical_search_attrs(attrs),
          {:ok, project_id} <- optional_uuid(Map.get(attrs, "project_id"), :project_id),
          {:ok, query} <- optional_query(Map.get(attrs, "query")) do
       tickets =
-        Ticket
+        base_query
         |> maybe_filter_project(project_id)
         |> maybe_filter_query(query)
         |> order_by([ticket], asc: ticket.inserted_at)
         |> Repo.all()
-        |> Enum.map(&present/1)
+        |> Enum.map(&present(ctx, &1))
 
       {:ok, tickets}
     end
@@ -189,7 +190,7 @@ defmodule Autoboard.Tickets do
   @spec add_dependency(Context.t(), Ecto.UUID.t(), Ecto.UUID.t(), pos_integer()) ::
           result(Ticket.t())
   def add_dependency(%Context{} = ctx, blocked_ticket_id, blocker_ticket_id, expected_revision) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize(ctx),
          {:ok, blocked_ticket_id} <- cast_uuid(blocked_ticket_id, :blocked_ticket_id),
          {:ok, blocker_ticket_id} <- cast_uuid(blocker_ticket_id, :blocker_ticket_id),
          :ok <- validate_expected_revision(expected_revision) do
@@ -203,7 +204,7 @@ defmodule Autoboard.Tickets do
   @spec remove_dependency(Context.t(), Ecto.UUID.t(), Ecto.UUID.t(), pos_integer()) ::
           result(Ticket.t())
   def remove_dependency(%Context{} = ctx, blocked_ticket_id, blocker_ticket_id, expected_revision) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize(ctx),
          {:ok, blocked_ticket_id} <- cast_uuid(blocked_ticket_id, :blocked_ticket_id),
          {:ok, blocker_ticket_id} <- cast_uuid(blocker_ticket_id, :blocker_ticket_id),
          :ok <- validate_expected_revision(expected_revision) do
@@ -216,8 +217,12 @@ defmodule Autoboard.Tickets do
 
   @spec blocked?(Context.t(), Ticket.t()) :: boolean() | {:error, Error.t()}
   def blocked?(%Context{} = ctx, %Ticket{} = ticket) do
-    with :ok <- authorize(ctx) do
-      unresolved_blocker?(ticket.id)
+    with {:ok, query} <- Scope.tickets(ctx),
+         %Ticket{} <- Repo.one(where(query, [candidate], candidate.id == ^ticket.id)) do
+      unresolved_blocker?(ctx, ticket.id)
+    else
+      nil -> {:error, %Error{kind: :not_found, message: "ticket not found"}}
+      {:error, %Error{} = error} -> {:error, error}
     end
   end
 
@@ -225,20 +230,20 @@ defmodule Autoboard.Tickets do
 
   @spec list_actionable(Context.t(), map()) :: [Ticket.t()] | {:error, Error.t()}
   def list_actionable(%Context{} = ctx, attrs) do
-    with :ok <- authorize(ctx),
+    with {:ok, base_query} <- Scope.tickets(ctx, from(ticket in Ticket, as: :ticket)),
          {:ok, attrs} <- canonical_actionable_attrs(attrs),
          {:ok, project_id} <- optional_uuid(Map.get(attrs, "project_id"), :project_id),
          {:ok, limit} <- actionable_limit(Map.get(attrs, "limit")) do
       tickets =
-        from(ticket in Ticket, as: :ticket)
+        base_query
         |> join(:inner, [ticket], project in Project, on: project.id == ticket.project_id)
         |> where(
           [ticket, project],
           ticket.status == :ready and ticket.assignee == :codex and project.state == :active
         )
         |> maybe_filter_project(project_id)
-        |> without_unresolved_blockers()
-        |> without_non_terminal_subtasks()
+        |> without_unresolved_blockers(ctx)
+        |> without_non_terminal_subtasks(ctx)
         |> order_by([ticket],
           asc:
             fragment(
@@ -250,7 +255,7 @@ defmodule Autoboard.Tickets do
         )
         |> limit(^limit)
         |> Repo.all()
-        |> Enum.map(&present/1)
+        |> Enum.map(&present(ctx, &1))
 
       tickets
     end
@@ -260,16 +265,17 @@ defmodule Autoboard.Tickets do
 
   defp mutate_dependency(ctx, blocked_ticket_id, blocker_ticket_id, expected_revision, operation) do
     Activity.commit(fn ->
-      project = blocked_ticket_id |> ticket_project_id() |> locked_project_if_present()
-      blocked_ticket = locked_ticket(blocked_ticket_id)
+      project = blocked_ticket_id |> ticket_project_id(ctx) |> locked_project_if_present(ctx)
+      blocked_ticket = locked_ticket(ctx, blocked_ticket_id)
 
       with {:ok, blocked_ticket} <- require_ticket(blocked_ticket),
            {:ok, project} <- require_project(project),
-           :ok <- require_revision(blocked_ticket, expected_revision),
+           :ok <- require_revision(ctx, blocked_ticket, expected_revision),
            :ok <- Projects.ensure_active(project),
-           {:ok, blocker_ticket} <- require_ticket(Repo.get(Ticket, blocker_ticket_id)),
+           {:ok, blocker_ticket} <- scoped_ticket(ctx, blocker_ticket_id),
            :ok <- require_same_project(blocked_ticket, blocker_ticket),
-           :ok <- mutate_dependency_edge(operation, blocked_ticket, blocker_ticket, project.id),
+           :ok <-
+             mutate_dependency_edge(ctx, operation, blocked_ticket, blocker_ticket, project.id),
            {:ok, updated} <- increment_revision(blocked_ticket),
            {:ok, event} <-
              Activity.append(
@@ -279,7 +285,7 @@ defmodule Autoboard.Tickets do
                updated.id,
                %{"blocker_ticket_id" => blocker_ticket.id}
              ) do
-        {present(updated, project, ticket_labels(updated)), [event]}
+        {present(ctx, updated, project, ticket_labels(ctx, updated)), [event]}
       else
         {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
         {:error, %Error{} = error} -> Repo.rollback(error)
@@ -288,10 +294,10 @@ defmodule Autoboard.Tickets do
     |> dependency_transaction_result()
   end
 
-  defp mutate_dependency_edge(:add, blocked_ticket, blocker_ticket, project_id) do
+  defp mutate_dependency_edge(ctx, :add, blocked_ticket, blocker_ticket, project_id) do
     with :ok <- reject_self_dependency(blocked_ticket, blocker_ticket),
          :ok <- reject_duplicate_dependency(blocked_ticket, blocker_ticket),
-         :ok <- reject_dependency_cycle(blocked_ticket, blocker_ticket, project_id),
+         :ok <- reject_dependency_cycle(ctx, blocked_ticket, blocker_ticket, project_id),
          {:ok, _dependency} <-
            %Dependency{}
            |> Dependency.changeset(%{
@@ -303,7 +309,7 @@ defmodule Autoboard.Tickets do
     end
   end
 
-  defp mutate_dependency_edge(:remove, blocked_ticket, blocker_ticket, _project_id) do
+  defp mutate_dependency_edge(_ctx, :remove, blocked_ticket, blocker_ticket, _project_id) do
     case Repo.get_by(Dependency,
            blocker_ticket_id: blocker_ticket.id,
            blocked_ticket_id: blocked_ticket.id
@@ -341,8 +347,8 @@ defmodule Autoboard.Tickets do
     end
   end
 
-  defp reject_dependency_cycle(blocked_ticket, blocker_ticket, project_id) do
-    edges = project_dependency_edges(project_id)
+  defp reject_dependency_cycle(ctx, blocked_ticket, blocker_ticket, project_id) do
+    edges = project_dependency_edges(ctx, project_id)
 
     if Graph.reachable?(edges, blocked_ticket.id, blocker_ticket.id) do
       {:error,
@@ -356,10 +362,12 @@ defmodule Autoboard.Tickets do
     end
   end
 
-  defp project_dependency_edges(project_id) do
+  defp project_dependency_edges(ctx, project_id) do
+    {:ok, tickets} = Scope.tickets(ctx)
+
     Repo.all(
-      from(dependency in Dependency,
-        join: blocked_ticket in Ticket,
+      from(blocked_ticket in tickets,
+        join: dependency in Dependency,
         on: blocked_ticket.id == dependency.blocked_ticket_id,
         where: blocked_ticket.project_id == ^project_id,
         select: {dependency.blocker_ticket_id, dependency.blocked_ticket_id}
@@ -376,22 +384,26 @@ defmodule Autoboard.Tickets do
     |> Repo.update()
   end
 
-  defp unresolved_blocker?(ticket_id) do
+  defp unresolved_blocker?(ctx, ticket_id) do
+    {:ok, blockers} = Scope.tickets(ctx)
+
     Repo.exists?(
-      from(dependency in Dependency,
-        join: blocker in Ticket,
-        on: blocker.id == dependency.blocker_ticket_id,
+      from(blocker in blockers,
+        join: dependency in Dependency,
+        on: dependency.blocker_ticket_id == blocker.id,
         where:
           dependency.blocked_ticket_id == ^ticket_id and blocker.status not in [:done, :canceled]
       )
     )
   end
 
-  defp without_unresolved_blockers(query) do
+  defp without_unresolved_blockers(query, ctx) do
+    {:ok, blocker_scope} = Scope.tickets(ctx)
+
     blockers =
-      from(dependency in Dependency,
-        join: blocker in Ticket,
-        on: blocker.id == dependency.blocker_ticket_id,
+      from(blocker in blocker_scope,
+        join: dependency in Dependency,
+        on: dependency.blocker_ticket_id == blocker.id,
         where:
           dependency.blocked_ticket_id == parent_as(:ticket).id and
             blocker.status not in [:done, :canceled],
@@ -401,9 +413,11 @@ defmodule Autoboard.Tickets do
     where(query, [_ticket], not exists(blockers))
   end
 
-  defp without_non_terminal_subtasks(query) do
+  defp without_non_terminal_subtasks(query, ctx) do
+    {:ok, ticket_scope} = Scope.tickets(ctx)
+
     subtasks =
-      from(subtask in Ticket,
+      from(subtask in ticket_scope,
         where:
           subtask.parent_ticket_id == parent_as(:ticket).id and
             subtask.status not in [:done, :canceled],
@@ -416,7 +430,7 @@ defmodule Autoboard.Tickets do
   defp notify_directly_blocked_tickets(ctx, project, ticket, status) do
     if terminal?(ticket.status) != terminal?(status) do
       ticket
-      |> directly_blocked_tickets()
+      |> directly_blocked_tickets(ctx)
       |> Enum.uniq_by(& &1.id)
       |> Enum.reduce_while({:ok, []}, fn blocked_ticket, {:ok, events} ->
         with {:ok, updated} <- increment_revision(blocked_ticket),
@@ -448,11 +462,13 @@ defmodule Autoboard.Tickets do
     end
   end
 
-  defp directly_blocked_tickets(ticket) do
+  defp directly_blocked_tickets(ticket, ctx) do
+    {:ok, tickets} = Scope.tickets(ctx)
+
     Repo.all(
-      from(dependency in Dependency,
-        join: blocked_ticket in Ticket,
-        on: blocked_ticket.id == dependency.blocked_ticket_id,
+      from(blocked_ticket in tickets,
+        join: dependency in Dependency,
+        on: dependency.blocked_ticket_id == blocked_ticket.id,
         where: dependency.blocker_ticket_id == ^ticket.id,
         lock: "FOR UPDATE",
         select: blocked_ticket
@@ -468,21 +484,24 @@ defmodule Autoboard.Tickets do
     |> Repo.update()
   end
 
-  defp validate_parent(nil, _project_id), do: :ok
+  defp validate_parent(_ctx, nil, _project_id), do: :ok
 
-  defp validate_parent(parent_ticket_id, project_id) do
-    case Repo.get(Ticket, parent_ticket_id) do
-      nil ->
+  defp validate_parent(ctx, parent_ticket_id, project_id) do
+    case scoped_ticket(ctx, parent_ticket_id) do
+      {:error, %Error{kind: :not_found}} ->
         invalid_argument(:parent_ticket_id, "must reference an existing ticket")
 
-      %Ticket{project_id: parent_project_id} when parent_project_id != project_id ->
+      {:ok, %Ticket{project_id: parent_project_id}} when parent_project_id != project_id ->
         invalid_argument(:parent_ticket_id, "must belong to the same project")
 
-      %Ticket{parent_ticket_id: parent_id} when not is_nil(parent_id) ->
+      {:ok, %Ticket{parent_ticket_id: parent_id}} when not is_nil(parent_id) ->
         invalid_argument(:parent_ticket_id, "must not create a grandchild")
 
-      %Ticket{} ->
+      {:ok, %Ticket{}} ->
         :ok
+
+      {:error, %Error{} = error} ->
+        {:error, error}
     end
   end
 
@@ -519,9 +538,11 @@ defmodule Autoboard.Tickets do
     end
   end
 
-  defp resolve_labels(_project_id, :not_supplied), do: {:ok, :not_supplied}
+  defp resolve_labels(_ctx, _project_id, :not_supplied), do: {:ok, :not_supplied}
 
-  defp resolve_labels(project_id, names) do
+  defp resolve_labels(ctx, project_id, names) do
+    {:ok, label_scope} = Scope.labels(ctx)
+
     labels =
       Enum.map(names, fn name ->
         changeset = Label.changeset(%Label{}, %{project_id: project_id, name: name})
@@ -533,7 +554,7 @@ defmodule Autoboard.Tickets do
                ),
              %Label{} = label <-
                Repo.one(
-                 from(label in Label,
+                 from(label in label_scope,
                    where:
                      label.project_id == ^project_id and
                        fragment("lower(?)", label.name) == ^String.downcase(name)
@@ -552,7 +573,10 @@ defmodule Autoboard.Tickets do
     end
   end
 
-  defp ticket_labels(ticket), do: ticket |> Repo.preload(:labels) |> Map.fetch!(:labels)
+  defp ticket_labels(ctx, ticket) do
+    {:ok, labels} = Scope.labels(ctx)
+    ticket |> Repo.preload(labels: labels) |> Map.fetch!(:labels)
+  end
 
   defp labels_changed?(_attrs, :not_supplied, _current_labels), do: false
 
@@ -585,23 +609,28 @@ defmodule Autoboard.Tickets do
     :ok
   end
 
-  defp maybe_replace_labels(_ticket_id, :not_supplied, current_labels, false),
+  defp maybe_replace_labels(_ctx, _ticket_id, :not_supplied, current_labels, false),
     do: {:ok, current_labels}
 
-  defp maybe_replace_labels(_ticket_id, _labels, current_labels, false), do: {:ok, current_labels}
+  defp maybe_replace_labels(_ctx, _ticket_id, _labels, current_labels, false),
+    do: {:ok, current_labels}
 
-  defp maybe_replace_labels(ticket_id, labels, _current_labels, true) do
-    with {:ok, labels} <- resolve_labels_from_names(ticket_id, labels),
+  defp maybe_replace_labels(ctx, ticket_id, labels, _current_labels, true) do
+    with {:ok, labels} <- resolve_labels_from_names(ctx, ticket_id, labels),
          :ok <- replace_labels(ticket_id, labels) do
       {:ok, labels}
     end
   end
 
-  defp resolve_labels_from_names(ticket_id, names) do
-    project_id =
-      Repo.one!(from(ticket in Ticket, where: ticket.id == ^ticket_id, select: ticket.project_id))
+  defp resolve_labels_from_names(ctx, ticket_id, names) do
+    {:ok, tickets} = Scope.tickets(ctx)
 
-    resolve_labels(project_id, names)
+    project_id =
+      Repo.one!(
+        from(ticket in tickets, where: ticket.id == ^ticket_id, select: ticket.project_id)
+      )
+
+    resolve_labels(ctx, project_id, names)
   end
 
   defp require_ticket_change(changeset, labels_changed?) do
@@ -622,7 +651,7 @@ defmodule Autoboard.Tickets do
       status == :done and blocked?(ctx, ticket) ->
         {:error, %Error{kind: :blocked_by_dependency, message: "ticket has unresolved blockers"}}
 
-      has_non_terminal_subtask?(ticket) ->
+      has_non_terminal_subtask?(ctx, ticket) ->
         {:error, %Error{kind: :invalid_transition, message: "ticket has non-terminal subtasks"}}
 
       true ->
@@ -632,9 +661,11 @@ defmodule Autoboard.Tickets do
 
   defp transition_allowed(_ctx, _ticket, _status), do: :ok
 
-  defp has_non_terminal_subtask?(ticket) do
+  defp has_non_terminal_subtask?(ctx, ticket) do
+    {:ok, tickets} = Scope.tickets(ctx)
+
     Repo.exists?(
-      from(subtask in Ticket,
+      from(subtask in tickets,
         where:
           subtask.parent_ticket_id == ^ticket.id and
             subtask.status not in [:done, :canceled]
@@ -642,11 +673,13 @@ defmodule Autoboard.Tickets do
     )
   end
 
-  defp present(ticket, project \\ nil, labels \\ nil) do
+  defp present(ctx, ticket, project \\ nil, labels \\ nil) do
     ticket =
-      if is_nil(labels), do: Repo.preload(ticket, :labels), else: %{ticket | labels: labels}
+      if is_nil(labels),
+        do: %{ticket | labels: ticket_labels(ctx, ticket)},
+        else: %{ticket | labels: labels}
 
-    project = project || Repo.preload(ticket, :project).project
+    project = project || scoped_project!(ctx, ticket.project_id)
 
     %{ticket | project: project, identifier: "#{project.key}-#{ticket.number}"}
   end
@@ -790,17 +823,32 @@ defmodule Autoboard.Tickets do
     where(query, [ticket], ilike(ticket.title, ^"%#{text}%"))
   end
 
-  defp locked_project(id),
-    do: Repo.one(from(project in Project, where: project.id == ^id, lock: "FOR UPDATE"))
+  defp locked_project(ctx, id) do
+    {:ok, projects} = Scope.projects(ctx)
+    Repo.one(from(project in projects, where: project.id == ^id, lock: "FOR UPDATE"))
+  end
 
-  defp locked_project_if_present(nil), do: nil
-  defp locked_project_if_present(project_id), do: locked_project(project_id)
+  defp locked_project_if_present(nil, _ctx), do: nil
+  defp locked_project_if_present(project_id, ctx), do: locked_project(ctx, project_id)
 
-  defp locked_ticket(id),
-    do: Repo.one(from(ticket in Ticket, where: ticket.id == ^id, lock: "FOR UPDATE"))
+  defp locked_ticket(ctx, id) do
+    {:ok, tickets} = Scope.tickets(ctx)
+    Repo.one(from(ticket in tickets, where: ticket.id == ^id, lock: "FOR UPDATE"))
+  end
 
-  defp ticket_project_id(ticket_id) do
-    Repo.one(from(ticket in Ticket, where: ticket.id == ^ticket_id, select: ticket.project_id))
+  defp ticket_project_id(ticket_id, ctx) do
+    {:ok, tickets} = Scope.tickets(ctx)
+    Repo.one(from(ticket in tickets, where: ticket.id == ^ticket_id, select: ticket.project_id))
+  end
+
+  defp scoped_ticket(ctx, ticket_id) do
+    {:ok, tickets} = Scope.tickets(ctx)
+    tickets |> where([ticket], ticket.id == ^ticket_id) |> Repo.one() |> require_ticket()
+  end
+
+  defp scoped_project!(ctx, project_id) do
+    {:ok, projects} = Scope.projects(ctx)
+    Repo.one!(from(project in projects, where: project.id == ^project_id))
   end
 
   defp require_project(nil), do: {:error, %Error{kind: :not_found, message: "project not found"}}
@@ -808,11 +856,15 @@ defmodule Autoboard.Tickets do
   defp require_ticket(nil), do: {:error, %Error{kind: :not_found, message: "ticket not found"}}
   defp require_ticket(ticket), do: {:ok, ticket}
 
-  defp require_revision(%Ticket{revision: revision}, revision), do: :ok
+  defp require_revision(_ctx, %Ticket{revision: revision}, revision), do: :ok
 
-  defp require_revision(ticket, _expected_revision) do
+  defp require_revision(ctx, ticket, _expected_revision) do
     {:error,
-     %Error{kind: :revision_conflict, message: "ticket has changed", current: present(ticket)}}
+     %Error{
+       kind: :revision_conflict,
+       message: "ticket has changed",
+       current: present(ctx, ticket)
+     }}
   end
 
   defp validate_expected_revision(revision) when is_integer(revision) and revision > 0, do: :ok
@@ -820,12 +872,7 @@ defmodule Autoboard.Tickets do
   defp validate_expected_revision(_revision),
     do: invalid_argument(:expected_revision, "must be a positive integer")
 
-  defp authorize(%Context{scope: :global, actor: actor}) when actor in [:me, :codex], do: :ok
-  defp authorize(_ctx), do: unauthorized()
-
-  defp unauthorized,
-    do:
-      {:error, %Error{kind: :unauthorized, message: "a global authorization context is required"}}
+  defp unauthorized, do: Scope.unauthorized("a global authorization context is required")
 
   defp invalid_argument(field, message) do
     {:error,

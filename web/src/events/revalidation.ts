@@ -5,6 +5,7 @@ type CurrentTicket = { readonly id: string; readonly project_id: string; readonl
 const payloadId = (payload: Record<string, unknown>, key: string): string | undefined => typeof payload[key] === "string" ? payload[key] : undefined
 
 export const isActivityRelevant = (event: ActivityEvent, pathname: string, projects: readonly Project[], currentTicket?: CurrentTicket): boolean => {
+  if (event.event_type.startsWith("project.") || ["ticket.created", "ticket.updated", "ticket.transitioned"].includes(event.event_type)) return true
   if (pathname === "/" || pathname === "/projects") return event.ticket_id === null
   if (pathname === "/triage") return projects.some((project) => project.id === event.project_id)
   if (/^\/tickets\/[^/]+$/.test(pathname)) {

@@ -59,6 +59,9 @@ defmodule AutoboardWeb.RouterTest do
 
     assert {400, %{"error" => %{"kind" => "validation_failed"}}} =
              get_response("/api/v1/events", "last-event-id", "1.5")
+
+    assert {404, %{"error" => %{"kind" => "not_found"}}} =
+             get_response("/api/v1/tickets/HTTP-#{String.duplicate("9", 1000)}")
   end
 
   test "downloads an attachment without exposing its managed path", %{board: board} do

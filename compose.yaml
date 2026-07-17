@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_DB: autoboard
-      POSTGRES_USER: autoboard
-      POSTGRES_PASSWORD: autoboard
+      POSTGRES_DB: ${AUTOBOARD_DB_NAME:-autoboard}
+      POSTGRES_USER: ${AUTOBOARD_DB_USER:-autoboard}
+      POSTGRES_PASSWORD: ${AUTOBOARD_DB_PASSWORD:-autoboard}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${AUTOBOARD_DB_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U autoboard"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5

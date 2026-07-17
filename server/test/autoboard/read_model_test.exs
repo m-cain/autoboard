@@ -213,6 +213,11 @@ defmodule Autoboard.ReadModelTest do
              ReadModel.project_board(invalid_ctx, project.key)
   end
 
+  test "oversized numeric ticket identifiers are stable not-found results", %{ctx: ctx} do
+    oversized = "AUTO-#{String.duplicate("9", 1000)}"
+    assert {:error, %Error{kind: :not_found}} = ReadModel.ticket_detail(ctx, oversized)
+  end
+
   defp complete_fixture(ctx, project) do
     triage = ticket_fixture(ctx, project, %{title: "Triage"})
     parent = ticket_fixture(ctx, project, %{title: "Parent", status: :backlog})

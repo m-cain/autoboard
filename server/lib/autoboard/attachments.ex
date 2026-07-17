@@ -7,18 +7,17 @@ defmodule Autoboard.Attachments do
   alias Autoboard.Attachments.Attachment
   alias Autoboard.Attachments.Storage
   alias Autoboard.Auth.Context
+  alias Autoboard.Auth.Scope
   alias Autoboard.Domain.Error
   alias Autoboard.Projects
-  alias Autoboard.Projects.Project
   alias Autoboard.Repo
-  alias Autoboard.Tickets.Ticket
 
   @inline_limit 262_144
   @type result(value) :: {:ok, value} | {:error, Error.t()}
 
   @spec add_from_path(Context.t(), Ecto.UUID.t(), String.t()) :: result(Attachment.t())
   def add_from_path(%Context{} = ctx, ticket_id, source_path) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize(ctx),
          {:ok, ticket_id} <- cast_uuid(ticket_id, :id),
          {:ok, staged} <- Storage.stage(source_path),
          attachment_id <- Ecto.UUID.generate(),
@@ -42,9 +41,9 @@ defmodule Autoboard.Attachments do
 
   @spec fetch(Context.t(), Ecto.UUID.t()) :: result(Attachment.t())
   def fetch(%Context{} = ctx, attachment_id) do
-    with :ok <- authorize(ctx),
+    with {:ok, query} <- Scope.attachments(ctx),
          {:ok, attachment_id} <- cast_uuid(attachment_id, :id) do
-      case Repo.get(Attachment, attachment_id) do
+      case Repo.one(where(query, [attachment], attachment.id == ^attachment_id)) do
         nil -> {:error, %Error{kind: :not_found, message: "attachment not found"}}
         attachment -> {:ok, attachment}
       end
@@ -103,8 +102,8 @@ defmodule Autoboard.Attachments do
   defp commit_attachment(ctx, ticket_id, staged, attachment_id, final_path) do
     try do
       Activity.commit(fn ->
-        project = ticket_id |> ticket_project_id() |> locked_project_if_present()
-        ticket = locked_ticket(ticket_id)
+        project = ticket_id |> ticket_project_id(ctx) |> locked_project_if_present(ctx)
+        ticket = locked_ticket(ctx, ticket_id)
 
         with {:ok, ticket} <- require_ticket(ticket),
              {:ok, project} <- require_project(project),
@@ -250,17 +249,22 @@ defmodule Autoboard.Attachments do
     end
   end
 
-  defp ticket_project_id(ticket_id),
-    do:
-      Repo.one(from(ticket in Ticket, where: ticket.id == ^ticket_id, select: ticket.project_id))
+  defp ticket_project_id(ticket_id, ctx) do
+    {:ok, tickets} = Scope.tickets(ctx)
+    Repo.one(from(ticket in tickets, where: ticket.id == ^ticket_id, select: ticket.project_id))
+  end
 
-  defp locked_project_if_present(nil), do: nil
+  defp locked_project_if_present(nil, _ctx), do: nil
 
-  defp locked_project_if_present(id),
-    do: Repo.one(from(project in Project, where: project.id == ^id, lock: "FOR UPDATE"))
+  defp locked_project_if_present(id, ctx) do
+    {:ok, projects} = Scope.projects(ctx)
+    Repo.one(from(project in projects, where: project.id == ^id, lock: "FOR UPDATE"))
+  end
 
-  defp locked_ticket(id),
-    do: Repo.one(from(ticket in Ticket, where: ticket.id == ^id, lock: "FOR UPDATE"))
+  defp locked_ticket(ctx, id) do
+    {:ok, tickets} = Scope.tickets(ctx)
+    Repo.one(from(ticket in tickets, where: ticket.id == ^id, lock: "FOR UPDATE"))
+  end
 
   defp require_project(nil), do: {:error, %Error{kind: :not_found, message: "project not found"}}
   defp require_project(project), do: {:ok, project}
@@ -277,12 +281,7 @@ defmodule Autoboard.Attachments do
     end
   end
 
-  defp authorize(%Context{scope: :global, actor: actor}) when actor in [:me, :codex], do: :ok
-  defp authorize(_), do: unauthorized()
-
-  defp unauthorized,
-    do:
-      {:error, %Error{kind: :unauthorized, message: "a global authorization context is required"}}
+  defp unauthorized, do: Scope.unauthorized("a global authorization context is required")
 
   defp invalid_argument(field, message),
     do:

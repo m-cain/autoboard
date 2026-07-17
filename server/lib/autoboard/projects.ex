@@ -3,6 +3,7 @@ defmodule Autoboard.Projects do
 
   alias Autoboard.Activity
   alias Autoboard.Auth.Context
+  alias Autoboard.Auth.Scope
   alias Autoboard.Domain.Error
   alias Autoboard.Projects.Project
   alias Autoboard.Repo
@@ -11,7 +12,7 @@ defmodule Autoboard.Projects do
 
   @spec create(Context.t(), map()) :: result(Project.t())
   def create(%Context{} = ctx, attrs) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize_global(ctx),
          :ok <- validate_attrs(attrs),
          {:ok, project} <-
            Activity.commit(fn ->
@@ -35,7 +36,7 @@ defmodule Autoboard.Projects do
 
   @spec update(Context.t(), Ecto.UUID.t(), pos_integer(), map()) :: result(Project.t())
   def update(%Context{} = ctx, id, expected_revision, attrs) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize(ctx),
          {:ok, id} <- cast_project_id(id),
          :ok <- validate_expected_revision(expected_revision),
          :ok <- validate_attrs(attrs) do
@@ -57,7 +58,7 @@ defmodule Autoboard.Projects do
 
   @spec archive(Context.t(), Ecto.UUID.t(), pos_integer()) :: result(Project.t())
   def archive(%Context{} = ctx, id, expected_revision) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize(ctx),
          {:ok, id} <- cast_project_id(id),
          :ok <- validate_expected_revision(expected_revision) do
       mutate(
@@ -78,12 +79,12 @@ defmodule Autoboard.Projects do
 
   @spec restore(Context.t(), Ecto.UUID.t(), pos_integer()) :: result(Project.t())
   def restore(%Context{} = ctx, id, expected_revision) do
-    with :ok <- authorize(ctx),
+    with :ok <- Scope.authorize(ctx),
          {:ok, id} <- cast_project_id(id),
          :ok <- validate_expected_revision(expected_revision),
          {:ok, project} <-
            Activity.commit(fn ->
-             project = locked_project(id)
+             project = locked_project(ctx, id)
 
              with {:ok, project} <- require_project(project),
                   :ok <- require_revision(project, expected_revision),
@@ -110,16 +111,14 @@ defmodule Autoboard.Projects do
 
   @spec list(Context.t()) :: result([Project.t()])
   def list(%Context{} = ctx) do
-    with :ok <- authorize(ctx) do
+    with {:ok, query} <- Scope.projects(ctx) do
       {:ok,
-       Repo.all(
-         from(project in Project,
-           order_by: [
-             asc: fragment("CASE WHEN ? = 'active' THEN 0 ELSE 1 END", project.state),
-             asc: fragment("lower(?)", project.name)
-           ]
-         )
-       )}
+       query
+       |> order_by([project],
+         asc: fragment("CASE WHEN ? = 'active' THEN 0 ELSE 1 END", project.state),
+         asc: fragment("lower(?)", project.name)
+       )
+       |> Repo.all()}
     end
   end
 
@@ -127,10 +126,11 @@ defmodule Autoboard.Projects do
 
   @spec fetch(Context.t(), Ecto.UUID.t()) :: result(Project.t())
   def fetch(%Context{} = ctx, id) do
-    with :ok <- authorize(ctx),
+    with {:ok, query} <- Scope.projects(ctx),
          {:ok, id} <- cast_project_id(id) do
-      Project
-      |> Repo.get(id)
+      query
+      |> where([project], project.id == ^id)
+      |> Repo.one()
       |> require_project()
     end
   end
@@ -161,7 +161,7 @@ defmodule Autoboard.Projects do
        ) do
     with {:ok, project} <-
            Activity.commit(fn ->
-             project = locked_project(id)
+             project = locked_project(ctx, id)
 
              with {:ok, project} <- require_project(project),
                   :ok <- require_revision(project, expected_revision),
@@ -189,8 +189,12 @@ defmodule Autoboard.Projects do
     end
   end
 
-  defp locked_project(id) do
-    Repo.one(from(project in Project, where: project.id == ^id, lock: "FOR UPDATE"))
+  defp locked_project(ctx, id) do
+    with {:ok, query} <- Scope.projects(ctx) do
+      query |> where([project], project.id == ^id) |> lock("FOR UPDATE") |> Repo.one()
+    else
+      _ -> nil
+    end
   end
 
   defp cast_project_id(id) do
@@ -262,12 +266,7 @@ defmodule Autoboard.Projects do
     %{"state" => %{"from" => Atom.to_string(from), "to" => Atom.to_string(to)}}
   end
 
-  defp authorize(%Context{scope: :global, actor: actor}) when actor in [:me, :codex], do: :ok
-  defp authorize(_ctx), do: unauthorized()
-
-  defp unauthorized do
-    {:error, %Error{kind: :unauthorized, message: "a global authorization context is required"}}
-  end
+  defp unauthorized, do: Scope.unauthorized("a global authorization context is required")
 
   defp validation_error(changeset) do
     %Error{

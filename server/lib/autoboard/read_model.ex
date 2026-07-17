@@ -9,10 +9,8 @@ defmodule Autoboard.ReadModel do
 
   import Ecto.Query
 
-  alias Autoboard.Activity.Event
-  alias Autoboard.Attachments.Attachment
   alias Autoboard.Auth.Context
-  alias Autoboard.Comments.Comment
+  alias Autoboard.Auth.Scope
   alias Autoboard.Domain.Error
   alias Autoboard.Projects.Project
   alias Autoboard.Repo
@@ -26,13 +24,11 @@ defmodule Autoboard.ReadModel do
   @spec list_projects(Context.t()) ::
           {:ok, %{active: [Project.t()], archived: [Project.t()]}} | {:error, Error.t()}
   def list_projects(%Context{} = ctx) do
-    with :ok <- authorize(ctx) do
+    with {:ok, project_query} <- Scope.projects(ctx) do
       projects =
-        Repo.all(
-          from(project in Project,
-            order_by: [asc: fragment("lower(?)", project.name), asc: project.id]
-          )
-        )
+        project_query
+        |> order_by([project], asc: fragment("lower(?)", project.name), asc: project.id)
+        |> Repo.all()
 
       {:ok,
        %{
@@ -46,21 +42,21 @@ defmodule Autoboard.ReadModel do
 
   @spec project(Context.t(), String.t()) :: {:ok, Project.t()} | {:error, Error.t()}
   def project(%Context{} = ctx, project_ref) do
-    with :ok <- authorize(ctx), do: fetch_project(project_ref)
+    with :ok <- Scope.authorize(ctx), do: fetch_project(ctx, project_ref)
   end
 
   def project(_ctx, _project_ref), do: unauthorized()
 
   @spec triage_tickets(Context.t()) :: {:ok, [Ticket.t()]} | {:error, Error.t()}
   def triage_tickets(%Context{} = ctx) do
-    with :ok <- authorize(ctx) do
+    with {:ok, ticket_query} <- Scope.tickets(ctx) do
       tickets =
-        Ticket
+        ticket_query
         |> join(:inner, [ticket], project in Project, on: project.id == ticket.project_id)
         |> where([ticket, project], ticket.status == :triage and project.state == :active)
         |> ordered_tickets()
         |> Repo.all()
-        |> hydrate_tickets()
+        |> hydrate_tickets(ctx)
 
       {:ok, tickets}
     end
@@ -70,14 +66,14 @@ defmodule Autoboard.ReadModel do
 
   @spec project_board(Context.t(), String.t()) :: {:ok, map()} | {:error, Error.t()}
   def project_board(%Context{} = ctx, project_ref) do
-    with :ok <- authorize(ctx),
-         {:ok, project} <- fetch_project(project_ref) do
+    with {:ok, ticket_query} <- Scope.tickets(ctx),
+         {:ok, project} <- fetch_project(ctx, project_ref) do
       tickets =
-        Ticket
+        ticket_query
         |> where([ticket], ticket.project_id == ^project.id and ticket.status in ^@board_statuses)
         |> ordered_tickets()
         |> Repo.all()
-        |> hydrate_tickets()
+        |> hydrate_tickets(ctx)
 
       {:ok,
        %{
@@ -94,14 +90,14 @@ defmodule Autoboard.ReadModel do
 
   @spec canceled_tickets(Context.t(), String.t()) :: {:ok, [Ticket.t()]} | {:error, Error.t()}
   def canceled_tickets(%Context{} = ctx, project_ref) do
-    with :ok <- authorize(ctx),
-         {:ok, project} <- fetch_project(project_ref) do
+    with {:ok, ticket_query} <- Scope.tickets(ctx),
+         {:ok, project} <- fetch_project(ctx, project_ref) do
       tickets =
-        Ticket
+        ticket_query
         |> where([ticket], ticket.project_id == ^project.id and ticket.status == :canceled)
         |> ordered_tickets()
         |> Repo.all()
-        |> hydrate_tickets()
+        |> hydrate_tickets(ctx)
 
       {:ok, tickets}
     end
@@ -111,25 +107,28 @@ defmodule Autoboard.ReadModel do
 
   @spec ticket_detail(Context.t(), String.t()) :: {:ok, map()} | {:error, Error.t()}
   def ticket_detail(%Context{} = ctx, ticket_ref) do
-    with :ok <- authorize(ctx),
-         {:ok, ticket} <- fetch_ticket(ticket_ref) do
-      parent = ticket.parent_ticket_id && Repo.get(Ticket, ticket.parent_ticket_id)
+    with {:ok, ticket_scope} <- Scope.tickets(ctx),
+         {:ok, ticket} <- fetch_ticket(ctx, ticket_ref) do
+      parent =
+        ticket.parent_ticket_id &&
+          Repo.one(from(parent in ticket_scope, where: parent.id == ^ticket.parent_ticket_id))
 
       subtasks =
         Repo.all(
-          from(subtask in Ticket,
+          from(subtask in ticket_scope,
             where: subtask.parent_ticket_id == ^ticket.id,
             order_by: [asc: subtask.inserted_at, asc: subtask.id]
           )
         )
 
-      blockers = related_tickets(ticket.id, :blockers)
-      blocked_tickets = related_tickets(ticket.id, :blocked_tickets)
+      blockers = related_tickets(ctx, ticket.id, :blockers)
+      blocked_tickets = related_tickets(ctx, ticket.id, :blocked_tickets)
 
       tickets =
         hydrate_tickets(
           [ticket, parent | subtasks ++ blockers ++ blocked_tickets]
-          |> Enum.reject(&is_nil/1)
+          |> Enum.reject(&is_nil/1),
+          ctx
         )
 
       tickets_by_id = Map.new(tickets, &{&1.id, &1})
@@ -144,9 +143,9 @@ defmodule Autoboard.ReadModel do
          subtasks: ticket_refs(subtasks, tickets_by_id),
          blockers: ticket_refs(blockers, tickets_by_id),
          blocked_tickets: ticket_refs(blocked_tickets, tickets_by_id),
-         comments: comments(ticket.id),
-         attachments: attachments(ticket.id),
-         activity: activity(ticket.id, @default_activity_limit),
+         comments: comments(ctx, ticket.id),
+         attachments: attachments(ctx, ticket.id),
+         activity: activity(ctx, ticket.id, @default_activity_limit),
          blocked: ticket.blocked
        }}
     end
@@ -156,7 +155,7 @@ defmodule Autoboard.ReadModel do
 
   @spec search_tickets(Context.t(), map()) :: {:ok, [Ticket.t()]} | {:error, Error.t()}
   def search_tickets(%Context{} = ctx, attrs) do
-    with :ok <- authorize(ctx),
+    with {:ok, ticket_query} <- Scope.tickets(ctx),
          {:ok, attrs} <- canonical_attrs(attrs, ["query", "project_id", "limit"]),
          {:ok, query} <- required_query(attrs),
          {:ok, project_id} <- optional_uuid(Map.get(attrs, "project_id"), :project_id),
@@ -164,7 +163,7 @@ defmodule Autoboard.ReadModel do
       pattern = "%#{escape_like(query)}%"
 
       tickets =
-        Ticket
+        ticket_query
         |> maybe_filter_project(project_id)
         |> where(
           [ticket],
@@ -174,7 +173,7 @@ defmodule Autoboard.ReadModel do
         |> ordered_tickets()
         |> limit(^limit)
         |> Repo.all()
-        |> hydrate_tickets()
+        |> hydrate_tickets(ctx)
 
       {:ok, tickets}
     end
@@ -184,20 +183,20 @@ defmodule Autoboard.ReadModel do
 
   @spec actionable_tickets(Context.t(), map()) :: {:ok, [Ticket.t()]} | {:error, Error.t()}
   def actionable_tickets(%Context{} = ctx, attrs) do
-    with :ok <- authorize(ctx),
+    with {:ok, ticket_query} <- Scope.tickets(ctx, from(ticket in Ticket, as: :ticket)),
          {:ok, attrs} <- canonical_attrs(attrs, ["project_id", "limit"]),
          {:ok, project_id} <- optional_uuid(Map.get(attrs, "project_id"), :project_id),
          {:ok, limit} <- actionable_limit(Map.get(attrs, "limit")) do
       tickets =
-        from(ticket in Ticket, as: :ticket)
+        ticket_query
         |> join(:inner, [ticket], project in Project, on: project.id == ticket.project_id)
         |> where(
           [ticket, project],
           ticket.status == :ready and ticket.assignee == :codex and project.state == :active
         )
         |> maybe_filter_project(project_id)
-        |> without_unresolved_blockers()
-        |> without_non_terminal_subtasks()
+        |> without_unresolved_blockers(ctx)
+        |> without_non_terminal_subtasks(ctx)
         |> order_by([ticket],
           asc:
             fragment(
@@ -209,7 +208,7 @@ defmodule Autoboard.ReadModel do
         )
         |> limit(^limit)
         |> Repo.all()
-        |> hydrate_tickets()
+        |> hydrate_tickets(ctx)
 
       {:ok, tickets}
     end
@@ -217,14 +216,16 @@ defmodule Autoboard.ReadModel do
 
   def actionable_tickets(_ctx, _attrs), do: unauthorized()
 
-  defp fetch_project(project_ref) do
+  defp fetch_project(ctx, project_ref) do
+    {:ok, projects} = Scope.projects(ctx)
+
     project =
       case Ecto.UUID.cast(project_ref) do
         {:ok, id} ->
-          Repo.get(Project, id)
+          Repo.one(from(project in projects, where: project.id == ^id))
 
         :error when is_binary(project_ref) ->
-          Repo.one(from(project in Project, where: project.key == ^String.upcase(project_ref)))
+          Repo.one(from(project in projects, where: project.key == ^String.upcase(project_ref)))
 
         :error ->
           nil
@@ -233,37 +234,49 @@ defmodule Autoboard.ReadModel do
     if project, do: {:ok, project}, else: not_found("project")
   end
 
-  defp fetch_ticket(ticket_ref) do
+  defp fetch_ticket(ctx, ticket_ref) do
+    {:ok, tickets} = Scope.tickets(ctx)
+
     query =
       case Ecto.UUID.cast(ticket_ref) do
-        {:ok, id} -> from(ticket in Ticket, where: ticket.id == ^id)
-        :error -> ticket_identifier_query(ticket_ref)
+        {:ok, id} -> from(ticket in tickets, where: ticket.id == ^id)
+        :error -> ticket_identifier_query(tickets, ticket_ref)
       end
 
     ticket = Repo.one(query)
     if ticket, do: {:ok, ticket}, else: not_found("ticket")
   end
 
-  defp ticket_identifier_query(ticket_ref) when is_binary(ticket_ref) do
+  defp ticket_identifier_query(tickets, ticket_ref) when is_binary(ticket_ref) do
     case Regex.run(~r/\A([A-Za-z][A-Za-z0-9]{1,7})-(\d+)\z/, ticket_ref) do
-      [_, key, number] ->
-        from(ticket in Ticket,
-          join: project in Project,
-          on: project.id == ticket.project_id,
-          where:
-            project.key == ^String.upcase(key) and ticket.number == ^String.to_integer(number)
-        )
+      [_, key, number] when byte_size(number) <= 10 ->
+        case Integer.parse(number) do
+          {number, ""} when number <= 2_147_483_647 ->
+            from(ticket in tickets,
+              join: project in Project,
+              on: project.id == ticket.project_id,
+              where: project.key == ^String.upcase(key) and ticket.number == ^number
+            )
+
+          _ ->
+            from(ticket in tickets, where: false)
+        end
+
+      [_, _key, _number] ->
+        from(ticket in tickets, where: false)
 
       _ ->
-        from(ticket in Ticket, where: false)
+        from(ticket in tickets, where: false)
     end
   end
 
-  defp ticket_identifier_query(_ticket_ref), do: from(ticket in Ticket, where: false)
+  defp ticket_identifier_query(tickets, _ticket_ref), do: from(ticket in tickets, where: false)
 
-  defp related_tickets(ticket_id, :blockers) do
+  defp related_tickets(ctx, ticket_id, :blockers) do
+    {:ok, tickets} = Scope.tickets(ctx)
+
     Repo.all(
-      from(blocker in Ticket,
+      from(blocker in tickets,
         join: dependency in Dependency,
         on: dependency.blocker_ticket_id == blocker.id,
         where: dependency.blocked_ticket_id == ^ticket_id,
@@ -272,9 +285,11 @@ defmodule Autoboard.ReadModel do
     )
   end
 
-  defp related_tickets(ticket_id, :blocked_tickets) do
+  defp related_tickets(ctx, ticket_id, :blocked_tickets) do
+    {:ok, tickets} = Scope.tickets(ctx)
+
     Repo.all(
-      from(blocked in Ticket,
+      from(blocked in tickets,
         join: dependency in Dependency,
         on: dependency.blocked_ticket_id == blocked.id,
         where: dependency.blocker_ticket_id == ^ticket_id,
@@ -283,55 +298,65 @@ defmodule Autoboard.ReadModel do
     )
   end
 
-  defp comments(ticket_id),
-    do:
-      Repo.all(
-        from(comment in Comment,
-          where: comment.ticket_id == ^ticket_id,
-          order_by: [asc: comment.inserted_at, asc: comment.id]
-        )
+  defp comments(ctx, ticket_id) do
+    {:ok, comments} = Scope.comments(ctx)
+
+    Repo.all(
+      from(comment in comments,
+        where: comment.ticket_id == ^ticket_id,
+        order_by: [asc: comment.inserted_at, asc: comment.id]
       )
+    )
+  end
 
-  defp attachments(ticket_id),
-    do:
-      Repo.all(
-        from(attachment in Attachment,
-          where: attachment.ticket_id == ^ticket_id,
-          order_by: [asc: attachment.inserted_at, asc: attachment.id]
-        )
+  defp attachments(ctx, ticket_id) do
+    {:ok, attachments} = Scope.attachments(ctx)
+
+    Repo.all(
+      from(attachment in attachments,
+        where: attachment.ticket_id == ^ticket_id,
+        order_by: [asc: attachment.inserted_at, asc: attachment.id]
       )
+    )
+  end
 
-  defp activity(ticket_id, limit),
-    do:
-      Repo.all(
-        from(event in Event,
-          where: event.ticket_id == ^ticket_id,
-          order_by: [desc: event.id],
-          limit: ^limit
-        )
+  defp activity(ctx, ticket_id, limit) do
+    {:ok, events} = Scope.events(ctx)
+
+    Repo.all(
+      from(event in events,
+        where: event.ticket_id == ^ticket_id,
+        order_by: [desc: event.id],
+        limit: ^limit
       )
+    )
+  end
 
-  defp hydrate_tickets([]), do: []
+  defp hydrate_tickets([], _ctx), do: []
 
-  defp hydrate_tickets(tickets) do
+  defp hydrate_tickets(tickets, ctx) do
     tickets = Enum.uniq_by(tickets, & &1.id)
     ticket_ids = Enum.map(tickets, & &1.id)
+
+    {:ok, project_scope} = Scope.projects(ctx)
 
     projects_by_id =
       tickets
       |> Enum.map(& &1.project_id)
       |> Enum.uniq()
       |> then(fn project_ids ->
-        Repo.all(from(project in Project, where: project.id in ^project_ids))
+        Repo.all(from(project in project_scope, where: project.id in ^project_ids))
       end)
       |> Map.new(&{&1.id, &1})
 
-    blocked_ids = unresolved_blocked_ticket_ids(ticket_ids)
-    comment_counts = association_counts(Comment, ticket_ids)
-    attachment_counts = association_counts(Attachment, ticket_ids)
+    blocked_ids = unresolved_blocked_ticket_ids(ctx, ticket_ids)
+    comment_counts = association_counts(ctx, :comments, ticket_ids)
+    attachment_counts = association_counts(ctx, :attachments, ticket_ids)
+
+    {:ok, label_scope} = Scope.labels(ctx)
 
     tickets
-    |> Repo.preload(:labels)
+    |> Repo.preload(labels: label_scope)
     |> Enum.map(fn ticket ->
       project = Map.fetch!(projects_by_id, ticket.project_id)
 
@@ -360,13 +385,15 @@ defmodule Autoboard.ReadModel do
   defp maybe_filter_project(query, project_id),
     do: where(query, [ticket], ticket.project_id == ^project_id)
 
-  defp unresolved_blocked_ticket_ids(ticket_ids) do
+  defp unresolved_blocked_ticket_ids(ctx, ticket_ids) do
+    {:ok, blockers} = Scope.tickets(ctx)
+
     ticket_ids
     |> then(fn ticket_ids ->
       Repo.all(
-        from(dependency in Dependency,
-          join: blocker in Ticket,
-          on: blocker.id == dependency.blocker_ticket_id,
+        from(blocker in blockers,
+          join: dependency in Dependency,
+          on: dependency.blocker_ticket_id == blocker.id,
           where:
             dependency.blocked_ticket_id in ^ticket_ids and
               blocker.status not in [:done, :canceled],
@@ -378,9 +405,15 @@ defmodule Autoboard.ReadModel do
     |> MapSet.new()
   end
 
-  defp association_counts(schema, ticket_ids) do
+  defp association_counts(ctx, association, ticket_ids) do
+    {:ok, query} =
+      case association do
+        :comments -> Scope.comments(ctx)
+        :attachments -> Scope.attachments(ctx)
+      end
+
     Repo.all(
-      from(record in schema,
+      from(record in query,
         where: record.ticket_id in ^ticket_ids,
         group_by: record.ticket_id,
         select: {record.ticket_id, count(record.id)}
@@ -389,11 +422,13 @@ defmodule Autoboard.ReadModel do
     |> Map.new()
   end
 
-  defp without_unresolved_blockers(query) do
+  defp without_unresolved_blockers(query, ctx) do
+    {:ok, blocker_scope} = Scope.tickets(ctx)
+
     blockers =
-      from(dependency in Dependency,
-        join: blocker in Ticket,
-        on: blocker.id == dependency.blocker_ticket_id,
+      from(blocker in blocker_scope,
+        join: dependency in Dependency,
+        on: dependency.blocker_ticket_id == blocker.id,
         where:
           dependency.blocked_ticket_id == parent_as(:ticket).id and
             blocker.status not in [:done, :canceled],
@@ -403,9 +438,11 @@ defmodule Autoboard.ReadModel do
     where(query, [_ticket], not exists(blockers))
   end
 
-  defp without_non_terminal_subtasks(query) do
+  defp without_non_terminal_subtasks(query, ctx) do
+    {:ok, ticket_scope} = Scope.tickets(ctx)
+
     subtasks =
-      from(subtask in Ticket,
+      from(subtask in ticket_scope,
         where:
           subtask.parent_ticket_id == parent_as(:ticket).id and
             subtask.status not in [:done, :canceled],
@@ -458,12 +495,7 @@ defmodule Autoboard.ReadModel do
     |> String.replace("_", "\\_")
   end
 
-  defp authorize(%Context{scope: :global, actor: actor}) when actor in [:me, :codex], do: :ok
-  defp authorize(_ctx), do: unauthorized()
-
-  defp unauthorized,
-    do:
-      {:error, %Error{kind: :unauthorized, message: "a global authorization context is required"}}
+  defp unauthorized, do: Scope.unauthorized("a global authorization context is required")
 
   defp not_found(resource),
     do: {:error, %Error{kind: :not_found, message: "#{resource} not found"}}

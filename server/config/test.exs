@@ -3,7 +3,11 @@ import Config
 database_url =
   "ecto://autoboard:autoboard@localhost/autoboard_test#{System.get_env("MIX_TEST_PARTITION")}"
 
-data_dir = Path.expand("../var", __DIR__)
+data_dir =
+  Path.join(
+    System.tmp_dir!(),
+    "autoboard-test-#{Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)}"
+  )
 
 config :autoboard,
   database_url: database_url,
