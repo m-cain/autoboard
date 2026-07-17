@@ -1,6 +1,8 @@
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
-import { createApiClient } from "./client.js"
+// @vitest-environment jsdom
+import { ApiClient, createApiClient } from "./client.js"
+import { createApiRunner } from "../runtime.js"
 
 const projectResponse = {
   active: [{ id: "11111111-1111-4111-8111-111111111111", key: "AUTO", name: "Autoboard", description: "", state: "active", revision: 1, inserted_at: "2026-07-16T12:34:56Z", updated_at: "2026-07-16T12:34:56Z" }],
@@ -24,8 +26,8 @@ describe("ApiClient", () => {
     const client = createApiClient({ fetch, sleep })
     await expect(Effect.runPromise(client.listProjects())).resolves.toEqual(projectResponse)
     expect(fetch).toHaveBeenCalledTimes(3)
-    expect(sleep).toHaveBeenNthCalledWith(1, 250)
-    expect(sleep).toHaveBeenNthCalledWith(2, 1000)
+    expect(sleep).toHaveBeenNthCalledWith(1, 250, undefined)
+    expect(sleep).toHaveBeenNthCalledWith(2, 1000, undefined)
   })
 
   it("does not retry non-503 HTTP or malformed responses", async () => {
@@ -58,5 +60,28 @@ describe("ApiClient", () => {
     await Promise.all([Effect.runPromise(client.listProjects()), Effect.runPromise(client.listTriage()), Effect.runPromise(client.getProjectBoard("AUTO")), Effect.runPromise(client.getCanceledTickets("AUTO")), Effect.runPromise(client.getTicket("AUTO-1"))])
 
     expect(fetch.mock.calls.map((args) => args[1]?.method)).toEqual(["GET", "GET", "GET", "GET", "GET"])
+  })
+
+  it("propagates a request signal and stops promptly when fetch is aborted", async () => {
+    const controller = new AbortController()
+    const fetch = vi.fn((_path: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })))
+    const client = createApiClient({ fetch, sleep: async () => undefined })
+    const run = createApiRunner(client)
+    const request = run(Effect.flatMap(ApiClient, (api) => api.listProjects(controller.signal)))
+    controller.abort()
+    await expect(request).rejects.toMatchObject({ _tag: "RequestAbortedError" })
+    expect(fetch.mock.calls[0]?.[1]?.signal).toBe(controller.signal)
+  })
+
+  it("aborts retry sleeps and makes no further retry attempt", async () => {
+    const controller = new AbortController()
+    const fetch = vi.fn().mockResolvedValue(new Response("unavailable", { status: 503 }))
+    const sleep = vi.fn((_milliseconds: number, signal?: AbortSignal) => new Promise<void>((_resolve, reject) => signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })))
+    const client = createApiClient({ fetch, sleep })
+    const request = Effect.runPromise(client.listProjects(controller.signal))
+    await vi.waitFor(() => expect(sleep).toHaveBeenCalledWith(250, controller.signal))
+    controller.abort()
+    await expect(request).rejects.toThrow("Request was aborted")
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

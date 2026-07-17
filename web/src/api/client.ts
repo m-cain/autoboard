@@ -7,37 +7,54 @@ const TicketList = exactStruct({ tickets: Schema.Array(TicketSummary) })
 export class HttpError extends Data.TaggedError("HttpError")<{ readonly status: number; readonly message: string }> {}
 export class NetworkError extends Data.TaggedError("NetworkError")<{ readonly message: string }> {}
 export class DecodeError extends Data.TaggedError("DecodeError")<{ readonly message: string }> {}
+export class RequestAbortedError extends Data.TaggedError("RequestAbortedError")<{ readonly message: string }> {}
 
 export type ApiClientService = {
-  readonly listProjects: () => Effect.Effect<Schema.Schema.Type<typeof ProjectsResponse>, HttpError | NetworkError | DecodeError>
-  readonly listTriage: () => Effect.Effect<Schema.Schema.Type<typeof TicketList>, HttpError | NetworkError | DecodeError>
-  readonly getProjectBoard: (key: string) => Effect.Effect<Schema.Schema.Type<typeof ProjectBoard>, HttpError | NetworkError | DecodeError>
-  readonly getCanceledTickets: (key: string) => Effect.Effect<Schema.Schema.Type<typeof TicketList>, HttpError | NetworkError | DecodeError>
-  readonly getTicket: (identifier: string) => Effect.Effect<Schema.Schema.Type<typeof TicketDetail>, HttpError | NetworkError | DecodeError>
+  readonly listProjects: (signal?: AbortSignal) => Effect.Effect<Schema.Schema.Type<typeof ProjectsResponse>, HttpError | NetworkError | DecodeError | RequestAbortedError>
+  readonly listTriage: (signal?: AbortSignal) => Effect.Effect<Schema.Schema.Type<typeof TicketList>, HttpError | NetworkError | DecodeError | RequestAbortedError>
+  readonly getProjectBoard: (key: string, signal?: AbortSignal) => Effect.Effect<Schema.Schema.Type<typeof ProjectBoard>, HttpError | NetworkError | DecodeError | RequestAbortedError>
+  readonly getCanceledTickets: (key: string, signal?: AbortSignal) => Effect.Effect<Schema.Schema.Type<typeof TicketList>, HttpError | NetworkError | DecodeError | RequestAbortedError>
+  readonly getTicket: (identifier: string, signal?: AbortSignal) => Effect.Effect<Schema.Schema.Type<typeof TicketDetail>, HttpError | NetworkError | DecodeError | RequestAbortedError>
 }
 
 export const ApiClient = Context.GenericTag<ApiClientService>("autoboard/ApiClient")
 
 type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-export type ApiClientOptions = { readonly fetch?: Fetch; readonly sleep?: (milliseconds: number) => Promise<void> }
+export type ApiClientOptions = { readonly fetch?: Fetch; readonly sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void> }
 
 const isNetworkFailure = (error: unknown): boolean => error instanceof TypeError
+const isAbortFailure = (error: unknown): boolean => error instanceof RequestAbortedError || (error instanceof DOMException && error.name === "AbortError")
 const encodeSegment = (value: string) => encodeURIComponent(value)
+const aborted = () => new RequestAbortedError({ message: "Request was aborted" })
+
+const awaitWithAbort = <A>(promise: Promise<A>, signal?: AbortSignal): Promise<A> => {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.reject(aborted())
+  return new Promise<A>((resolve, reject) => {
+    const onAbort = () => reject(aborted())
+    signal.addEventListener("abort", onAbort, { once: true })
+    void promise.then(
+      (value) => { signal.removeEventListener("abort", onAbort); resolve(value) },
+      (error: unknown) => { signal.removeEventListener("abort", onAbort); reject(error) },
+    )
+  })
+}
 
 export const createApiClient = (options: ApiClientOptions = {}): ApiClientService => {
   const fetcher = options.fetch ?? window.fetch.bind(window)
-  const sleep = options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds)))
+  const sleep = options.sleep ?? ((milliseconds: number, signal?: AbortSignal) => awaitWithAbort(new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds)), signal))
 
-  const get = <S extends Schema.Schema.Any>(path: string, schema: S): Effect.Effect<Schema.Schema.Type<S>, HttpError | NetworkError | DecodeError> =>
+  const get = <S extends Schema.Schema.Any>(path: string, schema: S, signal?: AbortSignal): Effect.Effect<Schema.Schema.Type<S>, HttpError | NetworkError | DecodeError | RequestAbortedError> =>
     Effect.tryPromise({
       try: async () => {
         let retry = 0
         while (true) {
           try {
-            const response = await fetcher(path, { method: "GET", headers: { accept: "application/json" } })
+            if (signal?.aborted) throw aborted()
+            const response = await awaitWithAbort(fetcher(path, { method: "GET", headers: { accept: "application/json" }, signal }), signal)
             if (!response.ok) {
               if (response.status === 503 && retry < 2) {
-                await sleep(retry === 0 ? 250 : 1000)
+                await awaitWithAbort(sleep(retry === 0 ? 250 : 1000, signal), signal)
                 retry += 1
                 continue
               }
@@ -60,8 +77,9 @@ export const createApiClient = (options: ApiClientOptions = {}): ApiClientServic
               throw new DecodeError({ message: "Response did not match the expected schema" })
             }
           } catch (error) {
+            if (isAbortFailure(error) || signal?.aborted) throw aborted()
             if (isNetworkFailure(error) && retry < 2) {
-              await sleep(retry === 0 ? 250 : 1000)
+              await awaitWithAbort(sleep(retry === 0 ? 250 : 1000, signal), signal)
               retry += 1
               continue
             }
@@ -70,16 +88,16 @@ export const createApiClient = (options: ApiClientOptions = {}): ApiClientServic
         }
       },
       catch: (error) => {
-        if (error instanceof HttpError || error instanceof DecodeError) return error
+        if (error instanceof HttpError || error instanceof DecodeError || error instanceof RequestAbortedError) return error
         return new NetworkError({ message: error instanceof Error ? error.message : "Network request failed" })
       },
     })
 
   return {
-    listProjects: () => get("/api/v1/projects", ProjectsResponse),
-    listTriage: () => get("/api/v1/triage", TicketList),
-    getProjectBoard: (key) => get(`/api/v1/projects/${encodeSegment(key)}/board`, ProjectBoard),
-    getCanceledTickets: (key) => get(`/api/v1/projects/${encodeSegment(key)}/canceled`, TicketList),
-    getTicket: (identifier) => get(`/api/v1/tickets/${encodeSegment(identifier)}`, TicketDetail),
+    listProjects: (signal) => get("/api/v1/projects", ProjectsResponse, signal),
+    listTriage: (signal) => get("/api/v1/triage", TicketList, signal),
+    getProjectBoard: (key, signal) => get(`/api/v1/projects/${encodeSegment(key)}/board`, ProjectBoard, signal),
+    getCanceledTickets: (key, signal) => get(`/api/v1/projects/${encodeSegment(key)}/canceled`, TicketList, signal),
+    getTicket: (identifier, signal) => get(`/api/v1/tickets/${encodeSegment(identifier)}`, TicketDetail, signal),
   }
 }

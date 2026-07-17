@@ -4,6 +4,8 @@ import { RouterProvider } from "react-router"
 import "./styles.css"
 import { router } from "./router.js"
 
+document.title = "Autoboard"
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode><RouterProvider router={router} /></StrictMode>,
 )
