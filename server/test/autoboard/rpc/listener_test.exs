@@ -208,12 +208,20 @@ defmodule Autoboard.RPC.ListenerTest do
     path = socket_path("listener-restart")
     {:ok, supervisor} = Supervisor.start_link([{Listener, path: path}], strategy: :one_for_one)
     [{Listener, listener, :worker, _}] = Supervisor.which_children(supervisor)
+    old_session_supervisor = :sys.get_state(listener).session_supervisor
+    assert {:ok, old_session} = Autoboard.RPCClient.connect(path)
+    assert eventually(fn -> Task.Supervisor.children(old_session_supervisor) != [] end)
 
     on_exit(fn ->
       if Process.alive?(supervisor), do: catch_exit(Supervisor.stop(supervisor))
     end)
 
     Process.exit(listener, :kill)
+
+    assert eventually(fn ->
+             not Process.alive?(old_session_supervisor) and
+               match?({:error, :closed}, :gen_tcp.recv(old_session, 0, 100))
+           end)
 
     assert eventually(fn ->
              [{Listener, replacement, :worker, _}] = Supervisor.which_children(supervisor)
@@ -230,6 +238,9 @@ defmodule Autoboard.RPC.ListenerTest do
                  false
              end
            end)
+
+    [{Listener, replacement, :worker, _}] = Supervisor.which_children(supervisor)
+    refute :sys.get_state(replacement).session_supervisor == old_session_supervisor
   end
 
   test "removes its owned endpoint when its supervisor shuts down" do

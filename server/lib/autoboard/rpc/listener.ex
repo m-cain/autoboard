@@ -68,8 +68,6 @@ defmodule Autoboard.RPC.Listener do
          :ok <- File.chmod(path, 0o600),
          :ok <- maybe_fail(opts, :supervisor),
          {:ok, sup} <- Task.Supervisor.start_link() do
-      Process.unlink(sup)
-
       with :ok <- maybe_fail(opts, :acceptor),
            {:ok, acceptor} <-
              Task.Supervisor.start_child(sup, fn -> Acceptor.accept_loop(socket, sup) end) do
