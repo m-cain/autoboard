@@ -19,10 +19,12 @@ defmodule Autoboard.Projects.Project do
   @type t :: %__MODULE__{}
 
   def create_changeset(project, attrs) do
+    {attrs, attribute_errors} = canonicalize_attrs(attrs)
     attrs = normalize_key(attrs)
 
     project
     |> cast(attrs, [:key, :name, :description])
+    |> add_attribute_errors(attribute_errors)
     |> reject_unsupported_create_fields(attrs)
     |> validate_text_field_types(attrs)
     |> validate_required([:key, :name])
@@ -35,8 +37,11 @@ defmodule Autoboard.Projects.Project do
   end
 
   def update_changeset(project, attrs) do
+    {attrs, attribute_errors} = canonicalize_attrs(attrs)
+
     project
     |> cast(attrs, [:name, :description])
+    |> add_attribute_errors(attribute_errors)
     |> reject_unsupported_fields(attrs)
     |> validate_text_field_types(attrs)
     |> validate_name()
@@ -63,6 +68,35 @@ defmodule Autoboard.Projects.Project do
       {:ok, value} when is_binary(value) -> Map.put(attrs, key, String.upcase(value))
       _ -> attrs
     end
+  end
+
+  defp canonicalize_attrs(attrs) do
+    {attrs, errors} =
+      Enum.reduce(attrs, {%{}, []}, fn {key, value}, {attrs, errors} ->
+        case canonicalize_key(key) do
+          {:ok, key} ->
+            if Map.has_key?(attrs, key) do
+              {attrs, [{:base, "duplicate attribute #{inspect(key)}"} | errors]}
+            else
+              {Map.put(attrs, key, value), errors}
+            end
+
+          :error ->
+            {attrs, [{:base, "attribute key #{inspect(key)} must be an atom or string"} | errors]}
+        end
+      end)
+
+    {attrs, Enum.reverse(errors)}
+  end
+
+  defp canonicalize_key(key) when is_atom(key), do: {:ok, Atom.to_string(key)}
+  defp canonicalize_key(key) when is_binary(key), do: {:ok, key}
+  defp canonicalize_key(_key), do: :error
+
+  defp add_attribute_errors(changeset, errors) do
+    Enum.reduce(errors, changeset, fn {field, message}, changeset ->
+      add_error(changeset, field, message)
+    end)
   end
 
   defp validate_key(changeset) do

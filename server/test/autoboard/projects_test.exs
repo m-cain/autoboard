@@ -108,6 +108,63 @@ defmodule Autoboard.ProjectsTest do
     assert_unchanged_project(ctx, project)
   end
 
+  test "project commands accept distinct mixed atom and string keys", %{ctx: ctx} do
+    assert {:ok, project} =
+             Projects.create(ctx, %{"name" => "Autoboard", key: "auto", description: ""})
+
+    assert {:ok, updated} =
+             Projects.update(ctx, project.id, project.revision, %{
+               "name" => "Renamed",
+               description: "Updated description"
+             })
+
+    assert updated.name == "Renamed"
+    assert updated.description == "Updated description"
+  end
+
+  test "project creation rejects conflicting and structural attribute keys atomically", %{
+    ctx: ctx
+  } do
+    for {attrs, field} <- [
+          {%{"name" => nil, key: "AUTO", description: ""}, :name},
+          {%{"key" => "AUTO", name: "Autoboard", description: nil}, :description}
+        ] do
+      assert_invalid_text_field(Projects.create(ctx, attrs), field)
+    end
+
+    for attrs <- [
+          %{"key" => "AUTO", key: "AUTO", name: "Autoboard", description: ""},
+          %{42 => "unexpected", key: "AUTO", name: "Autoboard", description: ""}
+        ] do
+      assert_invalid_base(Projects.create(ctx, attrs))
+    end
+
+    assert Repo.aggregate(Project, :count) == 0
+    assert Repo.aggregate(Event, :count) == 0
+  end
+
+  test "project updates reject conflicting and structural attribute keys without mutation", %{
+    ctx: ctx
+  } do
+    project = project_fixture(ctx)
+
+    for {attrs, field} <- [
+          {%{"description" => "changed", name: nil}, :name},
+          {%{"name" => 42, description: "changed"}, :name}
+        ] do
+      assert_invalid_text_field(Projects.update(ctx, project.id, project.revision, attrs), field)
+    end
+
+    for attrs <- [
+          %{"description" => "changed", description: "other"},
+          %{42 => "unexpected", name: "Changed"}
+        ] do
+      assert_invalid_base(Projects.update(ctx, project.id, project.revision, attrs))
+    end
+
+    assert_unchanged_project(ctx, project)
+  end
+
   test "create and update validate non-map attrs", %{ctx: ctx} do
     project = project_fixture(ctx)
 
@@ -314,5 +371,9 @@ defmodule Autoboard.ProjectsTest do
   defp assert_invalid_text_field(result, field) do
     assert {:error, %Error{kind: :validation_failed, fields: fields}} = result
     assert Map.has_key?(fields, field)
+  end
+
+  defp assert_invalid_base(result) do
+    assert {:error, %Error{kind: :validation_failed, fields: %{base: [_message | _]}}} = result
   end
 end
