@@ -222,6 +222,28 @@ defmodule Autoboard.RPC.SessionTest do
     assert {:error, :timeout} = RPCClient.receive(socket, 50)
   end
 
+  test "maps valid-shaped domain validation failures as application errors", %{
+    path: path,
+    token: token
+  } do
+    {:ok, socket} = RPCClient.connect(path)
+    :ok = RPCClient.send(socket, initialize(1, token))
+    assert {:ok, _} = RPCClient.receive(socket)
+
+    :ok = RPCClient.send(socket, request(2, "projects.create", %{"key" => "", "name" => ""}))
+
+    assert {:ok,
+            %{
+              "id" => 2,
+              "error" => %{
+                "code" => -32010,
+                "data" => %{"kind" => "validation_failed", "fields" => fields}
+              }
+            }} = RPCClient.receive(socket)
+
+    assert is_map(fields)
+  end
+
   test "rejects oversized frames without leaving the session open", %{path: path} do
     {:ok, socket} = RPCClient.connect(path)
     :ok = :gen_tcp.send(socket, <<@max_frame_bytes + 1::unsigned-big-integer-size(32)>>)

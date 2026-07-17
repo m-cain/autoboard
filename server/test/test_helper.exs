@@ -10,10 +10,16 @@ ExUnit.after_suite(fn _results ->
 
   wait_for_removal = fn
     _wait_for_removal, 0 ->
-      not File.exists?(path)
+      artifacts =
+        [path, path <> ".owner", path <> ".owner.claim"] ++ Path.wildcard(path <> ".owner.tmp-*")
+
+      Enum.all?(artifacts, &(not File.exists?(&1)))
 
     wait_for_removal, attempts ->
-      if File.exists?(path),
+      artifacts =
+        [path, path <> ".owner", path <> ".owner.claim"] ++ Path.wildcard(path <> ".owner.tmp-*")
+
+      if Enum.any?(artifacts, &File.exists?/1),
         do:
           (
             Process.sleep(10)
@@ -23,6 +29,6 @@ ExUnit.after_suite(fn _results ->
   end
 
   unless wait_for_removal.(wait_for_removal, 20) do
-    raise("test socket residue: #{path}")
+    raise("test listener residue: #{path}")
   end
 end)

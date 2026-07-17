@@ -147,6 +147,46 @@ defmodule Autoboard.RPC.ListenerTest do
     assert File.exists?(path)
   end
 
+  test "does not remove a valid replacement endpoint or marker during old listener shutdown" do
+    path = socket_path("replacement")
+    previous_trap_exit = Process.flag(:trap_exit, true)
+    {:ok, old_listener} = Listener.start_link(path: path)
+    :ok = File.rm(path)
+    {:ok, replacement} = :gen_tcp.listen(0, [:binary, ifaddr: {:local, String.to_charlist(path)}])
+    {:ok, stat} = File.lstat(path)
+
+    :ok =
+      write_marker(
+        path,
+        %{
+          "version" => 1,
+          "pid" => :os.getpid() |> List.to_string(),
+          "nonce" => Ecto.UUID.generate(),
+          "identity" => [
+            stat.major_device,
+            stat.minor_device,
+            stat.inode,
+            Bitwise.band(stat.mode, 0o170000),
+            stat.uid
+          ]
+        },
+        0o600
+      )
+
+    on_exit(fn ->
+      Process.flag(:trap_exit, previous_trap_exit)
+      :gen_tcp.close(replacement)
+      File.rm(path)
+      File.rm(path <> ".owner")
+      File.rmdir(path <> ".owner.claim")
+    end)
+
+    :ok = GenServer.stop(old_listener)
+    assert File.exists?(path)
+    assert File.exists?(path <> ".owner")
+    refute File.exists?(path <> ".owner.claim")
+  end
+
   test "restarts a killed acceptor and accepts a new connection" do
     path =
       Path.join(

@@ -260,9 +260,9 @@ defmodule Autoboard.RPC.Listener do
 
     result =
       with {:ok, io} <- File.open(temp, [:write, :exclusive, :binary]),
+           :ok <- File.chmod(temp, @marker_mode),
            :ok <- IO.binwrite(io, payload),
            :ok <- File.close(io),
-           :ok <- File.chmod(temp, @marker_mode),
            :ok <- File.rename(temp, marker) do
         :ok
       end

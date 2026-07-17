@@ -15,8 +15,6 @@ defmodule Autoboard.RPC.Error do
   def method_not_found(id),
     do: envelope(id, -32601, "Method not found", %{"kind" => "method_not_found"})
 
-  def domain(id, %DomainError{kind: :validation_failed} = error), do: invalid_params(id, error)
-
   def domain(id, %DomainError{} = error),
     do: envelope(id, -32010, error.message, domain_data(error))
 
