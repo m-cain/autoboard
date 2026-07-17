@@ -1,34 +1,26 @@
 defmodule Autoboard.RPC.Listener do
   @moduledoc false
-
   use GenServer
-
   alias Autoboard.RPC.Acceptor
-
   @max_frame_bytes 4_194_304
   @socket_file_type 0o140000
   @file_type_mask 0o170000
 
-  def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts)
-  end
+  def start_link(opts \\ []),
+    do: GenServer.start_link(__MODULE__, opts, Keyword.take(opts, [:name]))
 
   @impl true
   def init(opts) do
     path = Keyword.get(opts, :path, Application.fetch_env!(:autoboard, :socket_path))
 
-    with :ok <- prepare_socket_path(path),
+    with :ok <- File.mkdir_p(Path.dirname(path)),
+         {:ok, owner} <- acquire_owner(path),
+         :ok <- prepare_socket_path(path, owner),
          {:ok, socket} <- listen(path),
-         {:ok, identity} <- socket_identity(path) do
-      case start_bound_listener(path, socket, identity, opts) do
-        {:ok, state} ->
-          {:ok, state}
-
-        {:error, reason} ->
-          :gen_tcp.close(socket)
-          safe_remove_socket(path, identity)
-          {:stop, reason}
-      end
+         {:ok, identity} <- socket_identity(path),
+         :ok <- write_owner(owner, identity),
+         {:ok, state} <- start_bound_listener(path, socket, identity, owner, opts) do
+      {:ok, state}
     else
       {:error, reason} -> {:stop, reason}
     end
@@ -38,7 +30,14 @@ defmodule Autoboard.RPC.Listener do
   def terminate(_reason, state) do
     :gen_tcp.close(state.socket)
     Process.exit(state.session_supervisor, :shutdown)
-    safe_remove_socket(state.path, state.identity)
+
+    if owns?(state.owner, state.identity),
+      do:
+        (
+          safe_remove_socket(state.path, state.identity)
+          File.rm(state.owner.marker)
+        )
+
     :ok
   end
 
@@ -50,134 +49,205 @@ defmodule Autoboard.RPC.Listener do
       {:ok, acceptor} ->
         {:noreply, %{state | acceptor: acceptor, acceptor_ref: Process.monitor(acceptor)}}
 
-      {:error, _reason} ->
+      {:error, _} ->
         {:stop, :acceptor_unavailable, state}
     end
   end
 
-  defp listen(path) do
-    :gen_tcp.listen(
-      0,
-      [
-        :binary,
-        packet: 4,
-        active: false,
-        reuseaddr: true,
-        packet_size: @max_frame_bytes,
-        ifaddr: {:local, String.to_charlist(path)}
-      ]
-    )
-  end
-
-  defp start_bound_listener(path, socket, identity, opts) do
+  defp start_bound_listener(path, socket, identity, owner, opts) do
     with :ok <- maybe_fail(opts, :chmod),
          :ok <- File.chmod(path, 0o600),
          :ok <- maybe_fail(opts, :supervisor),
-         {:ok, session_supervisor} <- Task.Supervisor.start_link() do
-      Process.unlink(session_supervisor)
-      start_acceptor(path, socket, identity, session_supervisor, opts)
+         {:ok, sup} <- Task.Supervisor.start_link() do
+      Process.unlink(sup)
+
+      with :ok <- maybe_fail(opts, :acceptor),
+           {:ok, acceptor} <-
+             Task.Supervisor.start_child(sup, fn -> Acceptor.accept_loop(socket, sup) end) do
+        {:ok,
+         %{
+           path: path,
+           socket: socket,
+           identity: identity,
+           owner: owner,
+           session_supervisor: sup,
+           acceptor: acceptor,
+           acceptor_ref: Process.monitor(acceptor)
+         }}
+      else
+        {:error, r} ->
+          Process.exit(sup, :shutdown)
+          cleanup_failed(path, socket, identity, owner)
+          {:error, r}
+      end
     else
-      {:error, reason} -> {:error, reason}
+      {:error, r} ->
+        cleanup_failed(path, socket, identity, owner)
+        {:error, r}
     end
   end
 
-  defp start_acceptor(path, socket, identity, session_supervisor, opts) do
-    with :ok <- maybe_fail(opts, :acceptor),
-         {:ok, acceptor} <-
-           Task.Supervisor.start_child(session_supervisor, fn ->
-             Acceptor.accept_loop(socket, session_supervisor)
-           end) do
-      {:ok,
-       %{
-         path: path,
-         socket: socket,
-         identity: identity,
-         session_supervisor: session_supervisor,
-         acceptor: acceptor,
-         acceptor_ref: Process.monitor(acceptor)
-       }}
-    else
+  defp cleanup_failed(path, socket, identity, owner) do
+    :gen_tcp.close(socket)
+
+    if owns?(owner, identity),
+      do:
+        (
+          safe_remove_socket(path, identity)
+          File.rm(owner.marker)
+        )
+  end
+
+  defp acquire_owner(path), do: acquire_owner(path, 2)
+  defp acquire_owner(_path, 0), do: {:error, :socket_ownership_contended}
+
+  defp acquire_owner(path, attempts) do
+    marker = path <> ".owner"
+    nonce = Ecto.UUID.generate()
+    record = %{"pid" => os_pid(), "nonce" => nonce, "identity" => nil}
+
+    case File.open(marker, [:write, :exclusive]) do
+      {:ok, io} ->
+        :ok = IO.binwrite(io, Jason.encode!(record))
+        :ok = File.close(io)
+        :ok = File.chmod(marker, 0o600)
+        {:ok, %{marker: marker, nonce: nonce}}
+
+      {:error, :eexist} ->
+        reclaim_or_reject(path, marker, attempts)
+
       {:error, reason} ->
-        Process.exit(session_supervisor, :shutdown)
         {:error, reason}
     end
   end
 
-  defp maybe_fail(opts, stage) do
-    if Keyword.get(opts, :fail_stage) == stage,
-      do: {:error, {:injected_failure, stage}},
-      else: :ok
-  end
+  defp reclaim_or_reject(path, marker, attempts) do
+    with {:ok, json} <- File.read(marker),
+         {:ok, record} <- Jason.decode(json),
+         false <- pid_alive?(record["pid"]) do
+      tomb = marker <> ".stale-" <> Ecto.UUID.generate()
 
-  defp prepare_socket_path(path) do
-    with :ok <- File.mkdir_p(Path.dirname(path)) do
-      case File.lstat(path) do
-        {:error, :enoent} -> :ok
-        {:ok, stat} -> remove_stale_socket(path, stat)
-        {:error, reason} -> {:error, reason}
-      end
-    end
-  end
+      case File.rename(marker, tomb) do
+        :ok ->
+          result = reclaim_recorded_socket(path, record)
+          File.rm(tomb)
 
-  defp remove_stale_socket(path, stat) do
-    if socket_owned_by_current_user?(stat) do
-      identity = identity(stat)
+          case result do
+            :ok -> acquire_owner(path, attempts - 1)
+            {:error, _} = error -> error
+          end
 
-      case probe_socket(path) do
-        :live -> {:error, :socket_in_use}
-        :stale -> safe_remove_socket(path, identity)
+        {:error, _} ->
+          acquire_owner(path, attempts - 1)
       end
     else
-      {:error, :unsafe_existing_socket_path}
+      true -> {:error, :socket_in_use}
+      _ -> {:error, :ambiguous_socket_ownership}
     end
   end
 
-  defp safe_remove_socket(path, expected_identity) do
+  defp reclaim_recorded_socket(path, %{"identity" => identity}) when is_list(identity) do
+    expected = List.to_tuple(identity)
+
     case File.lstat(path) do
-      {:ok, stat} when is_map(stat) ->
-        if socket_owned_by_current_user?(stat) and identity(stat) == expected_identity,
+      {:error, :enoent} ->
+        :ok
+
+      {:ok, stat} ->
+        if(socket?(stat) and identity(stat) == expected,
           do: File.rm(path),
-          else: :ok
+          else: {:error, :ambiguous_socket_path}
+        )
+
+      _ ->
+        {:error, :ambiguous_socket_path}
+    end
+  end
+
+  defp reclaim_recorded_socket(_path, _), do: {:error, :ambiguous_socket_ownership}
+
+  defp prepare_socket_path(path, _owner) do
+    case File.lstat(path) do
+      {:error, :enoent} -> :ok
+      {:ok, _} -> {:error, :ambiguous_socket_path}
+      {:error, r} -> {:error, r}
+    end
+  end
+
+  defp write_owner(owner, identity),
+    do:
+      File.write(
+        owner.marker,
+        Jason.encode!(%{
+          "pid" => os_pid(),
+          "nonce" => owner.nonce,
+          "identity" => Tuple.to_list(identity)
+        })
+      )
+
+  defp owns?(owner, identity) do
+    with {:ok, json} <- File.read(owner.marker), {:ok, record} <- Jason.decode(json) do
+      record["nonce"] == owner.nonce and record["identity"] == Tuple.to_list(identity)
+    else
+      _ -> false
+    end
+  end
+
+  defp safe_remove_socket(path, expected) do
+    case File.lstat(path) do
+      {:ok, stat} ->
+        if(socket?(stat) and identity(stat) == expected, do: File.rm(path), else: :ok)
 
       _ ->
         :ok
     end
   end
 
-  defp probe_socket(path) do
-    case :gen_tcp.connect({:local, String.to_charlist(path)}, 0, [:binary, active: false], 100) do
-      {:ok, socket} ->
-        :gen_tcp.close(socket)
-        :live
-
-      {:error, _reason} ->
-        :stale
-    end
-  end
+  defp listen(path),
+    do:
+      :gen_tcp.listen(0, [
+        :binary,
+        packet: 4,
+        active: false,
+        reuseaddr: true,
+        packet_size: @max_frame_bytes,
+        ifaddr: {:local, String.to_charlist(path)}
+      ])
 
   defp socket_identity(path) do
     case File.lstat(path) do
-      {:ok, stat} when is_map(stat) ->
-        if socket_owned_by_current_user?(stat),
-          do: {:ok, identity(stat)},
-          else: {:error, :socket_identity_unavailable}
+      {:ok, stat} ->
+        if(socket?(stat), do: {:ok, identity(stat)}, else: {:error, :socket_identity_unavailable})
 
       _ ->
         {:error, :socket_identity_unavailable}
     end
   end
 
-  defp identity(%{major_device: major, minor_device: minor, inode: inode, mode: mode, uid: uid}),
-    do: {major, minor, inode, Bitwise.band(mode, @file_type_mask), uid}
+  defp socket?(%{mode: mode, uid: uid}),
+    do: Bitwise.band(mode, @file_type_mask) == @socket_file_type and uid == current_uid()
 
-  defp socket_owned_by_current_user?(%{mode: mode, uid: uid}) do
-    Bitwise.band(mode, @file_type_mask) == @socket_file_type and uid == current_uid()
+  defp identity(%{major_device: a, minor_device: b, inode: c, mode: d, uid: e}),
+    do: {a, b, c, Bitwise.band(d, @file_type_mask), e}
+
+  defp maybe_fail(opts, stage),
+    do:
+      if(Keyword.get(opts, :fail_stage) == stage,
+        do: {:error, {:injected_failure, stage}},
+        else: :ok
+      )
+
+  defp os_pid, do: :os.getpid() |> List.to_string()
+
+  defp pid_alive?(pid) when is_binary(pid) do
+    case System.cmd("kill", ["-0", pid], stderr_to_stdout: true) do
+      {_, 0} -> true
+      _ -> false
+    end
   end
 
-  defp socket_owned_by_current_user?(_stat), do: false
+  defp pid_alive?(_), do: true
 
-  defp current_uid do
-    {uid, 0} = System.cmd("id", ["-u"])
-    uid |> String.trim() |> String.to_integer()
-  end
+  defp current_uid,
+    do: System.cmd("id", ["-u"]) |> elem(0) |> String.trim() |> String.to_integer()
 end

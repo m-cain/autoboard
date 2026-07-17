@@ -11,7 +11,7 @@ defmodule Autoboard.Application do
       Autoboard.Repo,
       {Registry, keys: :duplicate, name: Autoboard.Activity.Registry},
       Autoboard.Attachments.Cleanup,
-      Autoboard.RPC.Listener
+      {Autoboard.RPC.Listener, name: Autoboard.RPC.Listener}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

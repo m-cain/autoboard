@@ -22,7 +22,7 @@ defmodule Autoboard.RPC.ListenerTest do
       end
     end)
 
-    assert {:error, :unsafe_existing_socket_path} = Listener.start_link(path: path)
+    assert {:error, :ambiguous_socket_path} = Listener.start_link(path: path)
     assert {:ok, "must survive"} = File.read(path)
   end
 
@@ -58,12 +58,9 @@ defmodule Autoboard.RPC.ListenerTest do
     :ok = :gen_tcp.close(socket)
 
     :ok = File.rm(path)
-    {:ok, replacement} = Listener.start_link(path: path)
+    assert {:error, :socket_in_use} = Listener.start_link(path: path)
     :ok = GenServer.stop(first)
-    assert File.exists?(path)
-    assert {:ok, socket} = Autoboard.RPCClient.connect(path)
-    :ok = :gen_tcp.close(socket)
-    :ok = GenServer.stop(replacement)
+    refute File.exists?(path)
   end
 
   test "replaces a proven stale current-user socket" do
@@ -76,6 +73,27 @@ defmodule Autoboard.RPC.ListenerTest do
     {:ok, stale} = :gen_tcp.listen(0, [:binary, ifaddr: {:local, String.to_charlist(path)}])
     :ok = :gen_tcp.close(stale)
     assert File.exists?(path)
+    {:ok, stat} = File.lstat(path)
+
+    identity = [
+      stat.major_device,
+      stat.minor_device,
+      stat.inode,
+      Bitwise.band(stat.mode, 0o170000),
+      stat.uid
+    ]
+
+    :ok =
+      File.write(
+        path <> ".owner",
+        Jason.encode!(%{
+          "pid" => "999999",
+          "nonce" => Ecto.UUID.generate(),
+          "identity" => identity
+        })
+      )
+
+    :ok = File.chmod(path <> ".owner", 0o600)
     {:ok, listener} = start_supervised({Listener, path: path})
     assert {:ok, socket} = Autoboard.RPCClient.connect(path)
     :ok = :gen_tcp.close(socket)
