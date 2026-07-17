@@ -152,12 +152,12 @@
     "inserted_at": {
       "type": "string",
       "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-      "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+      "format": "date-time"
     },
     "updated_at": {
       "type": "string",
       "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-      "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+      "format": "date-time"
     },
     "project": {
       "type": "object",
@@ -203,12 +203,12 @@
         "inserted_at": {
           "type": "string",
           "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-          "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+          "format": "date-time"
         },
         "updated_at": {
           "type": "string",
           "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-          "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+          "format": "date-time"
         }
       },
       "additionalProperties": false
@@ -352,12 +352,12 @@
             "inserted_at": {
               "type": "string",
               "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-              "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+              "format": "date-time"
             },
             "updated_at": {
               "type": "string",
               "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-              "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+              "format": "date-time"
             }
           },
           "additionalProperties": false
@@ -506,12 +506,12 @@
           "inserted_at": {
             "type": "string",
             "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-            "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+            "format": "date-time"
           },
           "updated_at": {
             "type": "string",
             "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-            "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -656,12 +656,12 @@
           "inserted_at": {
             "type": "string",
             "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-            "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+            "format": "date-time"
           },
           "updated_at": {
             "type": "string",
             "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-            "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -806,12 +806,12 @@
           "inserted_at": {
             "type": "string",
             "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-            "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+            "format": "date-time"
           },
           "updated_at": {
             "type": "string",
             "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-            "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -862,7 +862,7 @@
           "inserted_at": {
             "type": "string",
             "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-            "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -930,7 +930,7 @@
           "inserted_at": {
             "type": "string",
             "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-            "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -995,7 +995,7 @@
           "inserted_at": {
             "type": "string",
             "description": "a string matching the pattern ^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$",
-            "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,9})?Z$"
+            "format": "date-time"
           }
         },
         "additionalProperties": false

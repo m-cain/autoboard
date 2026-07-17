@@ -31,7 +31,9 @@ const isUtcTimestamp = (value: string): boolean => {
   const date = new Date(Date.UTC(year!, month! - 1, day!))
   return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day
 }
-const TimestampJsonSchema = pipe(Schema.String, Schema.pattern(utcTimestampPattern))
+const TimestampJsonSchema = pipe(Schema.String, Schema.pattern(utcTimestampPattern)).annotations({
+  jsonSchema: { format: "date-time" },
+})
 export const Timestamp = pipe(TimestampJsonSchema, Schema.filter(isUtcTimestamp))
 export const Sha256 = pipe(Schema.String, Schema.pattern(/^[a-f0-9]{64}$/))
 

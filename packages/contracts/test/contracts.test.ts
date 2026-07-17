@@ -45,6 +45,10 @@ describe("Autoboard transport contracts", () => {
       ...board,
       project: { ...board.project, inserted_at: "2026-99-99Tnot-a-timeZ" },
     })).toThrow()
+    expect(() => Schema.decodeUnknownSync(ProjectBoard)({
+      ...board,
+      project: { ...board.project, inserted_at: "2026-02-30T00:00:00Z" },
+    })).toThrow()
 
     expect(() => Schema.decodeUnknownSync(RpcSuccess)({
       jsonrpc: "2.0",

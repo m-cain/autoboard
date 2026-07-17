@@ -104,6 +104,27 @@ describe("RpcClient", () => {
     await client.close()
   })
 
+  test("accepts coalesced valid frames whose aggregate exceeds the single-frame limit", async () => {
+    const requests: Array<{ request: Request; socket: Socket }> = []
+    const value = "x".repeat(2_100_000)
+    const fixture = await startServer((request, socket) => {
+      if (initialized(request, socket)) return
+      requests.push({ request, socket })
+      if (requests.length === 2) {
+        socket.write(Buffer.concat(requests.reverse().map(({ request }) =>
+          frame({ jsonrpc: "2.0", id: request.id, result: { value } }),
+        )))
+      }
+    })
+    const client = await RpcClient.connect({ socketPath: fixture.path, token: "token" })
+
+    await expect(Promise.all([
+      client.call("one", {}, Schema.Struct({ value: Schema.String }), "read"),
+      client.call("two", {}, Schema.Struct({ value: Schema.String }), "read"),
+    ])).resolves.toEqual([{ value }, { value }])
+    await client.close()
+  })
+
   test("surfaces server errors as typed RPC errors", async () => {
     const fixture = await startServer((request, socket) => {
       if (initialized(request, socket)) return
@@ -215,6 +236,26 @@ describe("RpcClient", () => {
     await new Promise((resolve) => setTimeout(resolve, 5))
     await client.close()
     await expect(read).rejects.toThrow("closed")
+  })
+
+  test("close settles a reconnect that is still opening its Unix socket", async () => {
+    let initializations = 0
+    const fixture = await startServer((request, socket) => {
+      if (request.method === "session.initialize") {
+        initializations += 1
+        if (initializations === 1) initialized(request, socket)
+        return
+      }
+      socket.destroy()
+    })
+    const client = await RpcClient.connect({ socketPath: fixture.path, token: "token" })
+    const read = client.call("tickets.get", {}, Schema.Unknown, "read")
+    const outcome = read.catch((error: unknown) => error)
+    await new Promise((resolve) => setTimeout(resolve, 1))
+    const stopped = new Promise<void>((resolve) => fixture.server.close(() => resolve()))
+    await client.close()
+    await stopped
+    await expect(outcome).resolves.toMatchObject({ message: expect.stringContaining("closed") })
   })
 
   test("returns the decoded Type of transforming Effect schemas", async () => {

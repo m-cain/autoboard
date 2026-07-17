@@ -124,13 +124,24 @@ export class RpcClient {
     return new Promise((resolve, reject) => {
       const socket = createConnection(this.options.socketPath)
       this.opening = socket
-      const onError = (error: Error) => {
+      let settled = false
+      const finish = (error: Error) => {
+        if (settled) return
+        settled = true
         cleanup()
         if (this.opening === socket) this.opening = undefined
+        reject(error)
+      }
+      const onError = (error: Error) => {
         socket.destroy()
-        reject(new RpcConnectionError(`Unable to connect to RPC socket: ${error.message}`))
+        finish(new RpcConnectionError(`Unable to connect to RPC socket: ${error.message}`))
+      }
+      const onClose = () => {
+        finish(new RpcConnectionError("RPC socket closed before connecting"))
       }
       const onConnect = () => {
+        if (settled) return
+        settled = true
         cleanup()
         if (this.opening === socket) this.opening = undefined
         if (this.closed) {
@@ -146,9 +157,11 @@ export class RpcClient {
       const cleanup = () => {
         socket.off("error", onError)
         socket.off("connect", onConnect)
+        socket.off("close", onClose)
       }
       socket.once("error", onError)
       socket.once("connect", onConnect)
+      socket.once("close", onClose)
     })
   }
 
@@ -199,11 +212,6 @@ export class RpcClient {
   private receive(socket: Socket, chunk: Buffer): void {
     if (socket !== this.socket || this.closed) return
     this.receiveBuffer = Buffer.concat([this.receiveBuffer, chunk])
-    if (this.receiveBuffer.length > MAX_FRAME_BYTES + 4) {
-      this.failProtocol(socket, `RPC response exceeds ${MAX_FRAME_BYTES} bytes`)
-      return
-    }
-
     while (this.receiveBuffer.length >= 4) {
       const size = this.receiveBuffer.readUInt32BE(0)
       if (size > MAX_FRAME_BYTES) {

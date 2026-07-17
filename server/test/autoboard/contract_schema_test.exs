@@ -12,6 +12,15 @@ defmodule Autoboard.ContractSchemaTest do
     assert_valid("rpc-failure.schema.json", "error_current.json")
   end
 
+  test "generated timestamp schemas reject impossible calendar dates and malformed clock values" do
+    schema = @schemas |> Path.join("project.schema.json") |> File.read!() |> Jason.decode!()
+    project = @fixtures |> Path.join("project_board.json") |> File.read!() |> Jason.decode!() |> Map.fetch!("project")
+    xema = Xema.from_json_schema(schema)
+
+    assert {:error, _} = Xema.validate(xema, %{project | "inserted_at" => "2026-02-30T00:00:00Z"})
+    assert {:error, _} = Xema.validate(xema, %{project | "inserted_at" => "2026-07-16T25:00:00Z"})
+  end
+
   defp assert_valid(schema_name, fixture_name) do
     schema = @schemas |> Path.join(schema_name) |> File.read!() |> Jason.decode!()
     fixture = @fixtures |> Path.join(fixture_name) |> File.read!() |> Jason.decode!()
