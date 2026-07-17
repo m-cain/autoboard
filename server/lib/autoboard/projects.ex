@@ -42,8 +42,8 @@ defmodule Autoboard.Projects do
       "project.updated",
       attrs,
       &Project.update_changeset/2,
-      fn changeset, _project ->
-        %{"changed_fields" => Map.keys(changeset.changes) |> Enum.map(&to_string/1)}
+      fn project, changeset, _updated ->
+        changed_field_payload(project, changeset, [:name, :description])
       end
     )
   end
@@ -60,8 +60,8 @@ defmodule Autoboard.Projects do
       "project.archived",
       :archive,
       fn project, _attrs -> Project.state_changeset(project, :archived) end,
-      fn _changeset, _project ->
-        %{"state" => "archived"}
+      fn project, _changeset, _updated ->
+        state_payload(project.state, :archived)
       end
     )
   end
@@ -82,7 +82,7 @@ defmodule Autoboard.Projects do
                   {:ok, updated} <- Repo.update(Project.state_changeset(project, :active)),
                   {:ok, event} <-
                     Activity.append(ctx, "project.restored", updated.id, nil, %{
-                      "state" => "active"
+                      "state" => %{"from" => Atom.to_string(project.state), "to" => "active"}
                     }) do
                {updated, [event]}
              else
@@ -119,8 +119,8 @@ defmodule Autoboard.Projects do
   @spec fetch(Context.t(), Ecto.UUID.t()) :: result(Project.t())
   def fetch(%Context{} = ctx, id) when is_binary(id) do
     with :ok <- authorize(ctx) do
-      id
-      |> Repo.get(Project)
+      Project
+      |> Repo.get(id)
       |> require_project()
     end
   end
@@ -165,7 +165,7 @@ defmodule Autoboard.Projects do
                       event_type,
                       updated.id,
                       nil,
-                      payload_fun.(changeset, updated)
+                      payload_fun.(project, changeset, updated)
                     ) do
                {updated, [event]}
              else
@@ -206,6 +206,18 @@ defmodule Autoboard.Projects do
 
   defp guard_active(project, true), do: ensure_active(project)
   defp guard_active(_project, false), do: :ok
+
+  defp changed_field_payload(project, changeset, fields) do
+    changeset.changes
+    |> Map.take(fields)
+    |> Map.new(fn {field, value} ->
+      {Atom.to_string(field), %{"from" => Map.fetch!(project, field), "to" => value}}
+    end)
+  end
+
+  defp state_payload(from, to) do
+    %{"state" => %{"from" => Atom.to_string(from), "to" => Atom.to_string(to)}}
+  end
 
   defp authorize(%Context{scope: :global, actor: actor}) when actor in [:me, :codex], do: :ok
   defp authorize(_ctx), do: unauthorized()

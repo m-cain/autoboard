@@ -35,7 +35,7 @@ defmodule Autoboard.Projects.Project do
   def update_changeset(project, attrs) do
     project
     |> cast(attrs, [:name, :description])
-    |> reject_key_change(attrs)
+    |> reject_unsupported_fields(attrs)
     |> validate_name()
     |> validate_change(:description, fn :description, description ->
       if is_binary(description), do: [], else: [description: "must be a string"]
@@ -82,11 +82,35 @@ defmodule Autoboard.Projects.Project do
     |> update_change(:name, &String.trim/1)
   end
 
-  defp reject_key_change(changeset, attrs) do
-    if Map.has_key?(attrs, :key) or Map.has_key?(attrs, "key") do
-      add_error(changeset, :key, "is immutable")
-    else
-      changeset
-    end
+  defp reject_unsupported_fields(changeset, attrs) do
+    Enum.reduce(attrs, changeset, fn {field, _value}, changeset ->
+      case update_field(field) do
+        :allowed -> changeset
+        :key -> add_error(changeset, :key, "is immutable")
+        :base -> add_error(changeset, :base, "#{inspect(field)} is not allowed")
+        field when is_atom(field) -> add_error(changeset, field, "is not allowed")
+      end
+    end)
   end
+
+  defp update_field(field) when field in [:name, :description, "name", "description"],
+    do: :allowed
+
+  defp update_field(field) when field in [:key, "key"], do: :key
+
+  defp update_field(field)
+       when field in [
+              :state,
+              :revision,
+              :next_ticket_number,
+              "state",
+              "revision",
+              "next_ticket_number"
+            ],
+       do: normalize_field(field)
+
+  defp update_field(_field), do: :base
+
+  defp normalize_field(field) when is_atom(field), do: field
+  defp normalize_field(field), do: String.to_existing_atom(field)
 end
