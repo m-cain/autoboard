@@ -6,7 +6,7 @@ defmodule Autoboard.Repo.Migrations.CreateTicketsAndLabels do
       add :id, :binary_id, primary_key: true
       add :project_id, references(:projects, type: :binary_id, on_delete: :restrict), null: false
       add :number, :integer, null: false
-      add :title, :string, null: false
+      add :title, :text, null: false
       add :description, :text, null: false, default: ""
       add :status, :string, null: false, default: "triage"
       add :priority, :string, null: false, default: "none"

@@ -148,6 +148,47 @@ defmodule Autoboard.TicketsTest do
     assert event_count(project.id) == 1
   end
 
+  test "accepts a 500-character title and rejects an overlong create atomically", %{ctx: ctx} do
+    project = project_fixture(ctx, "AUTO")
+    valid_title = String.duplicate("a", 500)
+
+    assert {:ok, ticket} =
+             Tickets.create(ctx, %{project_id: project.id, title: valid_title})
+
+    assert ticket.title == valid_title
+
+    assert {:error, %Error{kind: :validation_failed, fields: %{title: [_]}}} =
+             Tickets.create(ctx, %{project_id: project.id, title: String.duplicate("b", 501)})
+
+    assert Repo.aggregate(Ticket, :count) == 1
+    assert event_count(project.id) == 2
+  end
+
+  test "accepts a 500-character update title and rejects an overlong update atomically", %{
+    ctx: ctx
+  } do
+    project = project_fixture(ctx, "AUTO")
+    ticket = ticket_fixture(ctx, project, %{labels: ["Backend"]})
+    valid_title = String.duplicate("a", 500)
+
+    assert {:ok, updated} =
+             Tickets.update(ctx, ticket.id, ticket.revision, %{title: valid_title})
+
+    assert updated.title == valid_title
+    assert updated.revision == ticket.revision + 1
+
+    assert {:error, %Error{kind: :validation_failed, fields: %{title: [_]}}} =
+             Tickets.update(ctx, updated.id, updated.revision, %{
+               title: String.duplicate("b", 501)
+             })
+
+    assert {:ok, unchanged} = Tickets.fetch(ctx, updated.id)
+    assert unchanged.title == valid_title
+    assert unchanged.revision == updated.revision
+    assert Enum.map(unchanged.labels, & &1.name) == ["Backend"]
+    assert event_count(project.id) == 3
+  end
+
   test "ticket mutations reject archived projects without consuming revisions or activity", %{
     ctx: ctx
   } do
