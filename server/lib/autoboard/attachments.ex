@@ -24,49 +24,12 @@ defmodule Autoboard.Attachments do
          attachment_id <- Ecto.UUID.generate(),
          final_path <- Storage.final_path(attachment_id),
          :ok <- move_staged_file(staged.staged_path, final_path) do
-      result =
-        Activity.commit(fn ->
-          project = ticket_id |> ticket_project_id() |> locked_project_if_present()
-          ticket = locked_ticket(ticket_id)
-
-          with {:ok, ticket} <- require_ticket(ticket),
-               {:ok, project} <- require_project(project),
-               :ok <- Projects.ensure_active(project),
-               {:ok, attachment} <-
-                 %Attachment{id: attachment_id}
-                 |> Attachment.changeset(%{
-                   original_filename: staged.original_filename,
-                   media_type: staged.media_type,
-                   byte_size: staged.byte_size,
-                   sha256: staged.sha256,
-                   managed_path: final_path,
-                   actor: ctx.actor,
-                   project_id: project.id,
-                   ticket_id: ticket.id
-                 })
-                 |> Repo.insert(),
-               {:ok, _updated_ticket} <- increment_revision(ticket),
-               {:ok, event} <-
-                 Activity.append(ctx, "attachment.added", project.id, ticket.id, %{
-                   "attachment_id" => attachment.id,
-                   "original_filename" => attachment.original_filename,
-                   "media_type" => attachment.media_type,
-                   "byte_size" => attachment.byte_size,
-                   "sha256" => attachment.sha256
-                 }) do
-            {attachment, [event]}
-          else
-            {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
-            {:error, %Error{} = error} -> Repo.rollback(error)
-          end
-        end)
-
-      case result do
+      case commit_attachment(ctx, ticket_id, staged, attachment_id, final_path) do
         {:ok, attachment} ->
           {:ok, attachment}
 
         {:error, error} ->
-          File.rm(final_path)
+          cleanup_final_file(final_path)
           {:error, error}
       end
     else
@@ -94,13 +57,16 @@ defmodule Autoboard.Attachments do
     with {:ok, attachment} <- fetch(ctx, attachment_id),
          :ok <- require_managed_regular_file(attachment.managed_path) do
       if text_attachment?(attachment) and attachment.byte_size <= @inline_limit do
-        case File.read(attachment.managed_path) do
-          {:ok, content} ->
+        case bounded_read(attachment.managed_path) do
+          {:ok, content} when byte_size(content) <= @inline_limit ->
             if String.valid?(content) do
               {:ok, %{attachment: attachment, content: content}}
             else
               {:ok, %{attachment: attachment, managed_path: attachment.managed_path}}
             end
+
+          {:ok, _content} ->
+            {:ok, %{attachment: attachment, managed_path: attachment.managed_path}}
 
           {:error, _reason} ->
             {:error, storage_error(:unreadable)}
@@ -117,24 +83,87 @@ defmodule Autoboard.Attachments do
   def cleanup do
     cleanup_stale_temp_files()
 
-    try do
-      log_orphan_final_files()
-    rescue
-      DBConnection.OwnershipError -> :ok
-      Postgrex.Error -> :ok
-    end
+    log_orphans_non_fatally()
 
     :ok
   end
 
   defp move_staged_file(staged_path, final_path) do
-    with :ok <- File.mkdir_p(Storage.final_dir()),
+    with :ok <- Storage.ensure_managed_dirs(),
          :ok <- File.rename(staged_path, final_path) do
       :ok
     else
       {:error, _reason} ->
         File.rm(staged_path)
         {:error, :unreadable}
+    end
+  end
+
+  defp commit_attachment(ctx, ticket_id, staged, attachment_id, final_path) do
+    try do
+      Activity.commit(fn ->
+        project = ticket_id |> ticket_project_id() |> locked_project_if_present()
+        ticket = locked_ticket(ticket_id)
+
+        with {:ok, ticket} <- require_ticket(ticket),
+             {:ok, project} <- require_project(project),
+             :ok <- Projects.ensure_active(project),
+             {:ok, attachment} <-
+               %Attachment{id: attachment_id}
+               |> Attachment.changeset(%{
+                 original_filename: staged.original_filename,
+                 media_type: staged.media_type,
+                 byte_size: staged.byte_size,
+                 sha256: staged.sha256,
+                 managed_path: final_path,
+                 actor: ctx.actor,
+                 project_id: project.id,
+                 ticket_id: ticket.id
+               })
+               |> persist_attachment(),
+             {:ok, _updated_ticket} <- increment_revision(ticket),
+             {:ok, event} <-
+               Activity.append(ctx, "attachment.added", project.id, ticket.id, %{
+                 "attachment_id" => attachment.id,
+                 "original_filename" => attachment.original_filename,
+                 "media_type" => attachment.media_type,
+                 "byte_size" => attachment.byte_size,
+                 "sha256" => attachment.sha256
+               }) do
+          {attachment, [event]}
+        else
+          {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
+          {:error, %Error{} = error} -> Repo.rollback(error)
+        end
+      end)
+    rescue
+      error ->
+        Logger.error("attachment persistence failed: #{Exception.message(error)}")
+        {:error, %Error{kind: :internal_error, message: "attachment persistence failed"}}
+    catch
+      kind, reason ->
+        Logger.error("attachment persistence #{kind}: #{inspect(reason)}")
+        {:error, %Error{kind: :internal_error, message: "attachment persistence failed"}}
+    end
+  end
+
+  defp persist_attachment(changeset) do
+    case Application.get_env(:autoboard, :attachment_persist) do
+      fun when is_function(fun, 1) -> fun.(changeset)
+      _ -> Repo.insert(changeset)
+    end
+  end
+
+  defp cleanup_final_file(final_path) do
+    case File.rm(final_path) do
+      :ok ->
+        :ok
+
+      {:error, :enoent} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("failed to remove staged attachment #{final_path}: #{inspect(reason)}")
     end
   end
 
@@ -165,16 +194,28 @@ defmodule Autoboard.Attachments do
         Enum.each(entries, fn entry ->
           path = Path.join(Storage.final_dir(), entry)
 
-          if entry != "tmp" and File.regular?(path) and
-               not Repo.exists?(
-                 from(attachment in Attachment, where: attachment.managed_path == ^path)
-               ) do
+          if entry != "tmp" and File.regular?(path) and not attachment_exists?(path) do
             Logger.warning("orphan attachment file retained: #{path}")
           end
         end)
 
       {:error, _reason} ->
         :ok
+    end
+  end
+
+  defp log_orphans_non_fatally do
+    log_orphan_final_files()
+  rescue
+    error -> Logger.warning("attachment orphan scan unavailable: #{Exception.message(error)}")
+  catch
+    kind, reason -> Logger.warning("attachment orphan scan #{kind}: #{inspect(reason)}")
+  end
+
+  defp attachment_exists?(path) do
+    case Application.get_env(:autoboard, :attachment_orphan_lookup) do
+      fun when is_function(fun, 1) -> fun.(path)
+      _ -> Repo.exists?(from(attachment in Attachment, where: attachment.managed_path == ^path))
     end
   end
 
@@ -187,6 +228,24 @@ defmodule Autoboard.Attachments do
     case File.lstat(path) do
       {:ok, %{type: :regular}} -> :ok
       _ -> {:error, storage_error(:unreadable)}
+    end
+  end
+
+  defp bounded_read(path) do
+    case File.open(path, [:read, :binary, :raw]) do
+      {:ok, io} ->
+        try do
+          case IO.binread(io, @inline_limit + 1) do
+            :eof -> {:ok, ""}
+            content when is_binary(content) -> {:ok, content}
+            {:error, reason} -> {:error, reason}
+          end
+        after
+          File.close(io)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

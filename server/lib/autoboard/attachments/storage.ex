@@ -6,10 +6,10 @@ defmodule Autoboard.Attachments.Storage do
     with :ok <- require_absolute(source_path),
          {:ok, stat} <- regular_file_stat(source_path),
          :ok <- enforce_size(stat.size),
-         :ok <- File.mkdir_p(tmp_dir()) do
+         :ok <- ensure_managed_dirs() do
       staged_path = Path.join(tmp_dir(), Ecto.UUID.generate())
 
-      case copy_and_hash(source_path, staged_path, stat) do
+      case stage_copy(source_path, staged_path, stat) do
         {:ok, %{byte_size: byte_size, sha256: sha256}} ->
           {:ok,
            %{
@@ -38,6 +38,16 @@ defmodule Autoboard.Attachments.Storage do
   @spec final_path(Ecto.UUID.t()) :: String.t()
   def final_path(id), do: Path.join(final_dir(), id)
 
+  @spec ensure_managed_dirs() :: :ok | {:error, atom()}
+  def ensure_managed_dirs do
+    with :ok <- File.mkdir_p(final_dir()),
+         :ok <- File.chmod(final_dir(), 0o700),
+         :ok <- File.mkdir_p(tmp_dir()),
+         :ok <- File.chmod(tmp_dir(), 0o700) do
+      :ok
+    end
+  end
+
   defp data_dir, do: Application.fetch_env!(:autoboard, :data_dir)
   defp max_bytes, do: Application.fetch_env!(:autoboard, :max_attachment_bytes)
 
@@ -57,22 +67,46 @@ defmodule Autoboard.Attachments.Storage do
     if size <= max_bytes(), do: :ok, else: {:error, :too_large}
   end
 
+  defp stage_copy(source_path, staged_path, initial_stat) do
+    try do
+      copy_and_hash(source_path, staged_path, initial_stat)
+    rescue
+      _error -> {:error, :unreadable}
+    catch
+      _kind, _reason -> {:error, :unreadable}
+    end
+  end
+
   defp copy_and_hash(source_path, staged_path, initial_stat) do
-    with {:ok, source} <- File.open(source_path, [:read, :binary, :raw]),
-         {:ok, target} <- File.open(staged_path, [:write, :binary, :raw]) do
-      try do
-        with :ok <- confirm_same_regular_file(source_path, initial_stat),
-             {:ok, hash, byte_size} <- copy_chunks(source, target, :crypto.hash_init(:sha256), 0),
-             :ok <- confirm_same_regular_file(source_path, initial_stat) do
-          {:ok,
-           %{byte_size: byte_size, sha256: Base.encode16(:crypto.hash_final(hash), case: :lower)}}
+    case File.open(source_path, [:read, :binary, :raw]) do
+      {:ok, source} ->
+        try do
+          case File.open(staged_path, [:write, :binary, :raw]) do
+            {:ok, target} ->
+              try do
+                with :ok <- File.chmod(staged_path, 0o600),
+                     :ok <- confirm_open_regular_file(source, initial_stat),
+                     {:ok, hash, byte_size} <-
+                       copy_chunks(source, target, :crypto.hash_init(:sha256), 0) do
+                  {:ok,
+                   %{
+                     byte_size: byte_size,
+                     sha256: Base.encode16(:crypto.hash_final(hash), case: :lower)
+                   }}
+                end
+              after
+                File.close(target)
+              end
+
+            {:error, _reason} ->
+              {:error, :unreadable}
+          end
+        after
+          File.close(source)
         end
-      after
-        File.close(source)
-        File.close(target)
-      end
-    else
-      {:error, _reason} -> {:error, :unreadable}
+
+      {:error, _reason} ->
+        {:error, :unreadable}
     end
   end
 
@@ -85,29 +119,47 @@ defmodule Autoboard.Attachments.Storage do
         {:error, :unreadable}
 
       chunk when is_binary(chunk) ->
-        case IO.binwrite(target, chunk) do
-          :ok ->
-            copy_chunks(
-              source,
-              target,
-              :crypto.hash_update(hash, chunk),
-              byte_size + byte_size(chunk)
-            )
+        next_byte_size = byte_size + byte_size(chunk)
 
-          {:error, _reason} ->
-            {:error, :unreadable}
+        if next_byte_size > max_bytes() do
+          {:error, :too_large}
+        else
+          case IO.binwrite(target, chunk) do
+            :ok ->
+              maybe_test_hook(:after_chunk, next_byte_size)
+
+              copy_chunks(
+                source,
+                target,
+                :crypto.hash_update(hash, chunk),
+                next_byte_size
+              )
+
+            {:error, _reason} ->
+              {:error, :unreadable}
+          end
         end
     end
   end
 
-  defp confirm_same_regular_file(path, initial_stat) do
-    with {:ok, %{type: :regular} = current} <- File.lstat(path, time: :posix),
+  defp confirm_open_regular_file(source, initial_stat) do
+    with {:ok,
+          {:file_info, size, :regular, _access, _atime, _mtime, _ctime, _mode, _links,
+           major_device, minor_device, inode, _uid, _gid}} <- :file.read_file_info(source),
          true <-
-           current.inode == initial_stat.inode and current.size == initial_stat.size and
-             current.mtime == initial_stat.mtime do
+           size == initial_stat.size and inode == initial_stat.inode and
+             major_device == initial_stat.major_device and
+             minor_device == initial_stat.minor_device do
       :ok
     else
       _ -> {:error, :source_changed}
+    end
+  end
+
+  defp maybe_test_hook(stage, byte_size) do
+    case Application.get_env(:autoboard, :attachment_storage_hook) do
+      fun when is_function(fun, 2) -> fun.(stage, byte_size)
+      _ -> :ok
     end
   end
 

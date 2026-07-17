@@ -1,6 +1,8 @@
 defmodule Autoboard.Activity do
   import Ecto.Query
 
+  require Logger
+
   alias Autoboard.Activity.Broadcaster
   alias Autoboard.Activity.Event
   alias Autoboard.Auth.Context
@@ -27,13 +29,17 @@ defmodule Autoboard.Activity do
 
   @spec commit((-> {term(), [Event.t()]})) :: {:ok, term()} | {:error, term()}
   def commit(fun) when is_function(fun, 0) do
-    case Repo.transaction(fun) do
-      {:ok, {result, events}} when is_list(events) ->
-        Enum.each(events, &broadcast/1)
-        {:ok, result}
+    if Repo.in_transaction?() do
+      {:error, :nested_transaction}
+    else
+      case Repo.transaction(fun) do
+        {:ok, {result, events}} when is_list(events) ->
+          Enum.each(events, &safe_broadcast/1)
+          {:ok, result}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -50,6 +56,26 @@ defmodule Autoboard.Activity do
 
   @spec broadcast(Event.t()) :: :ok
   def broadcast(%Event{} = event), do: Broadcaster.broadcast(event)
+
+  defp safe_broadcast(event) do
+    broadcaster =
+      case Application.get_env(:autoboard, :activity_broadcast) do
+        fun when is_function(fun, 1) -> fun
+        _ -> &broadcast/1
+      end
+
+    try do
+      broadcaster.(event)
+    rescue
+      error ->
+        Logger.warning("activity broadcast failed after commit: #{Exception.message(error)}")
+    catch
+      kind, reason ->
+        Logger.warning("activity broadcast #{kind} after commit: #{inspect(reason)}")
+    end
+
+    :ok
+  end
 
   @spec replay_after(Context.t(), non_neg_integer()) ::
           {:ok, [Event.t()]} | {:error, :unauthorized}
