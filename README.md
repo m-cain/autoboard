@@ -8,10 +8,10 @@ Requirements: Docker, Elixir/Erlang, Node.js with Corepack, and PostgreSQL avail
 
 ```bash
 docker compose up -d postgres
-cd server && mix autoboard.setup
-cd server && mix autoboard.token.create --actor codex
+(cd server && mix autoboard.setup)
+(cd server && mix autoboard.token.create --actor codex)
 corepack pnpm build
-cd server && _build/prod/rel/autoboard/bin/autoboard start
+(cd server && _build/prod/rel/autoboard/bin/autoboard start)
 ```
 
 `mix autoboard.setup` is idempotent. It migrates PostgreSQL and creates the managed data, attachment, and temporary-attachment directories with owner-only (`0700`) permissions. `mix autoboard.token.create --actor me` and `--actor codex` accept no other actors; each prints one new plaintext token exactly once. The database persists only a SHA-256 digest, so save the printed token in a local secret store before closing the terminal.
@@ -33,8 +33,8 @@ For Codex setup, see [docs/codex-mcp-config.md](docs/codex-mcp-config.md).
 
 ```bash
 docker compose up -d postgres
-cd server && MIX_ENV=test mix ecto.reset && mix format --check-formatted && mix test
-cd .. && corepack pnpm check && corepack pnpm test && corepack pnpm build
+(cd server && MIX_ENV=test mix ecto.reset && mix format --check-formatted && mix test)
+corepack pnpm check && corepack pnpm test && corepack pnpm build
 corepack pnpm --filter @autoboard/e2e test
 git diff --check
 ```

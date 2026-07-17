@@ -5,7 +5,9 @@ if config_env() != :test do
     System.get_env("DATABASE_URL") ||
       "ecto://autoboard:autoboard@localhost/autoboard_dev"
 
-  data_dir = System.get_env("AUTOBOARD_DATA_DIR") || Path.expand("../var", __DIR__)
+  # Keep the default stable between Mix and a release. Both documented commands
+  # run from `server`, while `__DIR__` points inside a relocated release.
+  data_dir = System.get_env("AUTOBOARD_DATA_DIR") || Path.expand("var", File.cwd!())
 
   http_port =
     System.get_env("AUTOBOARD_HTTP_PORT", "4040")

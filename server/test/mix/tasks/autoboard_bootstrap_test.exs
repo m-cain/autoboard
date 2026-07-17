@@ -63,5 +63,9 @@ defmodule Mix.Tasks.AutoboardBootstrapTest do
     assert_raise Mix.Error, ~r/requires --actor/, fn ->
       Mix.Tasks.Autoboard.Token.Create.run([])
     end
+
+    assert_raise Mix.Error, ~r/accepts only --actor/, fn ->
+      Mix.Tasks.Autoboard.Token.Create.run(["--actor", "me", "--actor", "codex"])
+    end
   end
 end

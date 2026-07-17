@@ -39,7 +39,9 @@ defmodule Mix.Tasks.Autoboard.Token.Create do
   defp parse_actor!(args) do
     {options, rest, invalid} = OptionParser.parse(args, strict: [actor: :string])
 
-    if rest != [] or invalid != [] do
+    actor_options = Enum.count(args, &(&1 == "--actor" or String.starts_with?(&1, "--actor=")))
+
+    if rest != [] or invalid != [] or actor_options > 1 do
       Mix.raise("mix autoboard.token.create accepts only --actor me|codex")
     end
 

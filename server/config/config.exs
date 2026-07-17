@@ -1,6 +1,6 @@
 import Config
 
-data_dir = Path.expand("../var", __DIR__)
+data_dir = Path.expand("var", File.cwd!())
 
 database_url =
   System.get_env("DATABASE_URL") ||

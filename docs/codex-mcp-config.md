@@ -4,9 +4,9 @@ Build Autoboard and issue a Codex credential first:
 
 ```bash
 docker compose up -d postgres
-cd server && mix autoboard.setup
-cd server && mix autoboard.token.create --actor codex
-cd .. && corepack pnpm build
+(cd server && mix autoboard.setup)
+(cd server && mix autoboard.token.create --actor codex)
+corepack pnpm build
 ```
 
 Store the printed token outside this repository. Then configure a local stdio MCP server with an absolute adapter path and the private Unix socket/token values. In a Codex configuration file, the shape is:
@@ -22,8 +22,7 @@ default_tools_approval_mode = "writes"
 Start the local server separately:
 
 ```bash
-cd server
-_build/prod/rel/autoboard/bin/autoboard start
+(cd server && _build/prod/rel/autoboard/bin/autoboard start)
 ```
 
 The v1 credential model is global: a token can access the entire board. A future project-scoped credential will keep the same MCP surface while the server filters project-rooted queries through its authorization context. The browser HTTP interface is loopback-only and read-only; all creates and edits go through MCP.

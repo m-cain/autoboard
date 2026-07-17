@@ -18,6 +18,13 @@ defmodule AutoboardWeb.SPA do
 
   @spec static_dir() :: String.t()
   def static_dir do
-    Application.get_env(:autoboard, :static_dir, Path.expand("../../priv/static", __DIR__))
+    Application.get_env(:autoboard, :static_dir, default_static_dir())
+  end
+
+  defp default_static_dir do
+    :autoboard
+    |> :code.priv_dir()
+    |> to_string()
+    |> Path.join("static")
   end
 end
