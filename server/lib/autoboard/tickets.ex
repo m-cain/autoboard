@@ -1,0 +1,545 @@
+defmodule Autoboard.Tickets do
+  import Ecto.Query
+
+  alias Autoboard.Activity
+  alias Autoboard.Auth.Context
+  alias Autoboard.Domain.Error
+  alias Autoboard.Projects
+  alias Autoboard.Projects.Project
+  alias Autoboard.Repo
+  alias Autoboard.Tickets.Label
+  alias Autoboard.Tickets.Ticket
+
+  @type result(value) :: {:ok, value} | {:error, Error.t()}
+
+  @spec create(Context.t(), map()) :: result(Ticket.t())
+  def create(%Context{} = ctx, attrs) do
+    with :ok <- authorize(ctx),
+         {:ok, attrs} <- canonical_attrs(attrs),
+         {:ok, project_id} <- cast_uuid(Map.get(attrs, "project_id"), :project_id),
+         {:ok, parent_ticket_id} <-
+           optional_uuid(Map.get(attrs, "parent_ticket_id"), :parent_ticket_id),
+         {:ok, labels} <- normalized_labels(attrs),
+         :ok <- valid_changeset(Ticket.create_changeset(%Ticket{}, attrs)) do
+      labels = if labels == :not_supplied, do: [], else: labels
+
+      Repo.transaction(fn ->
+        project = locked_project(project_id)
+
+        with {:ok, project} <- require_project(project),
+             :ok <- Projects.ensure_active(project),
+             :ok <- validate_parent(parent_ticket_id, project.id),
+             {:ok, project} <- allocate_ticket_number(project),
+             {:ok, ticket} <-
+               %Ticket{}
+               |> Ticket.create_changeset(attrs)
+               |> Ecto.Changeset.put_change(:project_id, project.id)
+               |> Ecto.Changeset.put_change(:parent_ticket_id, parent_ticket_id)
+               |> Ecto.Changeset.put_change(:number, project.next_ticket_number - 1)
+               |> Repo.insert(),
+             {:ok, labels} <- resolve_labels(project.id, labels),
+             :ok <- replace_labels(ticket.id, labels),
+             ticket = present(ticket, project, labels),
+             {:ok, _event} <-
+               Activity.append(
+                 ctx,
+                 "ticket.created",
+                 project.id,
+                 ticket.id,
+                 created_payload(ticket)
+               ) do
+          ticket
+        else
+          {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
+          {:error, %Error{} = error} -> Repo.rollback(error)
+        end
+      end)
+      |> transaction_result()
+    end
+  end
+
+  def create(_ctx, _attrs), do: unauthorized()
+
+  @spec update(Context.t(), Ecto.UUID.t(), pos_integer(), map()) :: result(Ticket.t())
+  def update(%Context{} = ctx, id, expected_revision, attrs) do
+    with :ok <- authorize(ctx),
+         {:ok, id} <- cast_uuid(id, :id),
+         :ok <- validate_expected_revision(expected_revision),
+         {:ok, attrs} <- canonical_attrs(attrs),
+         {:ok, labels} <- normalized_labels(attrs),
+         :ok <- valid_changeset(Ticket.update_changeset(%Ticket{}, attrs)) do
+      Repo.transaction(fn ->
+        ticket = locked_ticket(id)
+
+        with {:ok, ticket} <- require_ticket(ticket),
+             project = locked_project(ticket.project_id),
+             {:ok, project} <- require_project(project),
+             :ok <- require_revision(ticket, expected_revision),
+             :ok <- Projects.ensure_active(project),
+             current_labels = ticket_labels(ticket),
+             labels_changed? = labels_changed?(attrs, labels, current_labels),
+             changeset = Ticket.update_changeset(ticket, attrs),
+             :ok <- require_ticket_change(changeset, labels_changed?),
+             {:ok, updated} <-
+               changeset
+               |> Ecto.Changeset.put_change(:revision, ticket.revision + 1)
+               |> Repo.update(),
+             {:ok, updated_labels} <-
+               maybe_replace_labels(updated.id, labels, current_labels, labels_changed?),
+             updated = present(updated, project, updated_labels),
+             {:ok, _event} <-
+               Activity.append(
+                 ctx,
+                 "ticket.updated",
+                 project.id,
+                 updated.id,
+                 update_payload(
+                   ticket,
+                   changeset,
+                   current_labels,
+                   updated_labels,
+                   labels_changed?
+                 )
+               ) do
+          updated
+        else
+          {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
+          {:error, %Error{} = error} -> Repo.rollback(error)
+        end
+      end)
+      |> transaction_result()
+    end
+  end
+
+  def update(_ctx, _id, _expected_revision, _attrs), do: unauthorized()
+
+  @spec transition(Context.t(), Ecto.UUID.t(), pos_integer(), atom() | String.t()) ::
+          result(Ticket.t())
+  def transition(%Context{} = ctx, id, expected_revision, status) do
+    with :ok <- authorize(ctx),
+         {:ok, id} <- cast_uuid(id, :id),
+         :ok <- validate_expected_revision(expected_revision),
+         {:ok, status} <- normalize_status(status) do
+      Repo.transaction(fn ->
+        ticket = locked_ticket(id)
+
+        with {:ok, ticket} <- require_ticket(ticket),
+             project = locked_project(ticket.project_id),
+             {:ok, project} <- require_project(project),
+             :ok <- require_revision(ticket, expected_revision),
+             :ok <- Projects.ensure_active(project),
+             :ok <- require_status_change(ticket, status),
+             :ok <- transition_allowed(ticket, status),
+             {:ok, updated} <- Repo.update(Ticket.transition_changeset(ticket, status)),
+             updated = present(updated, project, ticket_labels(ticket)),
+             {:ok, _event} <-
+               Activity.append(ctx, "ticket.transitioned", project.id, updated.id, %{
+                 "status" => %{
+                   "from" => Atom.to_string(ticket.status),
+                   "to" => Atom.to_string(status)
+                 }
+               }) do
+          updated
+        else
+          {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(validation_error(changeset))
+          {:error, %Error{} = error} -> Repo.rollback(error)
+        end
+      end)
+      |> transaction_result()
+    end
+  end
+
+  def transition(_ctx, _id, _expected_revision, _status), do: unauthorized()
+
+  @spec fetch(Context.t(), Ecto.UUID.t()) :: result(Ticket.t())
+  def fetch(%Context{} = ctx, id) do
+    with :ok <- authorize(ctx),
+         {:ok, id} <- cast_uuid(id, :id),
+         {:ok, ticket} <- require_ticket(Repo.get(Ticket, id)) do
+      {:ok, present(ticket)}
+    end
+  end
+
+  def fetch(_ctx, _id), do: unauthorized()
+
+  @spec search(Context.t(), map()) :: result([Ticket.t()])
+  def search(%Context{} = ctx, attrs) do
+    with :ok <- authorize(ctx),
+         {:ok, attrs} <- canonical_search_attrs(attrs),
+         {:ok, project_id} <- optional_uuid(Map.get(attrs, "project_id"), :project_id),
+         {:ok, query} <- optional_query(Map.get(attrs, "query")) do
+      tickets =
+        Ticket
+        |> maybe_filter_project(project_id)
+        |> maybe_filter_query(query)
+        |> order_by([ticket], asc: ticket.inserted_at)
+        |> Repo.all()
+        |> Enum.map(&present/1)
+
+      {:ok, tickets}
+    end
+  end
+
+  def search(_ctx, _attrs), do: unauthorized()
+
+  defp allocate_ticket_number(project) do
+    project
+    |> Ecto.Changeset.change(next_ticket_number: project.next_ticket_number + 1)
+    |> Repo.update()
+  end
+
+  defp validate_parent(nil, _project_id), do: :ok
+
+  defp validate_parent(parent_ticket_id, project_id) do
+    case Repo.get(Ticket, parent_ticket_id) do
+      nil ->
+        invalid_argument(:parent_ticket_id, "must reference an existing ticket")
+
+      %Ticket{project_id: parent_project_id} when parent_project_id != project_id ->
+        invalid_argument(:parent_ticket_id, "must belong to the same project")
+
+      %Ticket{parent_ticket_id: parent_id} when not is_nil(parent_id) ->
+        invalid_argument(:parent_ticket_id, "must not create a grandchild")
+
+      %Ticket{} ->
+        :ok
+    end
+  end
+
+  defp normalized_labels(attrs) do
+    case Map.fetch(attrs, "labels") do
+      :error -> {:ok, :not_supplied}
+      {:ok, labels} when is_list(labels) -> normalize_label_list(labels)
+      {:ok, _labels} -> invalid_argument(:labels, "must be a list of strings")
+    end
+  end
+
+  defp normalize_label_list(labels) do
+    labels
+    |> Enum.reduce_while({:ok, %{}}, fn label, {:ok, normalized} ->
+      with true <- is_binary(label),
+           name <- label |> String.trim() |> String.replace(~r/\s+/, " "),
+           true <- name != "",
+           true <- String.length(name) <= 50 do
+        {:cont, {:ok, Map.put_new(normalized, String.downcase(name), name)}}
+      else
+        false ->
+          {:halt, invalid_argument(:labels, "entries must be trimmed strings of 1-50 characters")}
+      end
+    end)
+    |> case do
+      {:ok, normalized} when map_size(normalized) <= 20 ->
+        {:ok, normalized |> Map.values() |> Enum.sort_by(&String.downcase/1)}
+
+      {:ok, _normalized} ->
+        invalid_argument(:labels, "must contain at most 20 labels")
+
+      error ->
+        error
+    end
+  end
+
+  defp resolve_labels(_project_id, :not_supplied), do: {:ok, :not_supplied}
+
+  defp resolve_labels(project_id, names) do
+    labels =
+      Enum.map(names, fn name ->
+        changeset = Label.changeset(%Label{}, %{project_id: project_id, name: name})
+
+        with {:ok, _label} <-
+               Repo.insert(changeset,
+                 on_conflict: :nothing,
+                 conflict_target: [:project_id, :name]
+               ),
+             %Label{} = label <-
+               Repo.one(
+                 from(label in Label,
+                   where:
+                     label.project_id == ^project_id and
+                       fragment("lower(?)", label.name) == ^String.downcase(name)
+                 )
+               ) do
+          {:ok, label}
+        else
+          {:error, changeset} -> {:error, changeset}
+          nil -> {:error, %Error{kind: :internal_error, message: "label lookup failed"}}
+        end
+      end)
+
+    case Enum.find(labels, &match?({:error, _}, &1)) do
+      nil -> {:ok, Enum.map(labels, fn {:ok, label} -> label end)}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp ticket_labels(ticket), do: ticket |> Repo.preload(:labels) |> Map.fetch!(:labels)
+
+  defp labels_changed?(_attrs, :not_supplied, _current_labels), do: false
+
+  defp labels_changed?(_attrs, desired_labels, current_labels) do
+    desired_labels
+    |> Enum.map(&String.downcase/1)
+    |> MapSet.new()
+    |> Kernel.!=(current_labels |> Enum.map(&String.downcase(&1.name)) |> MapSet.new())
+  end
+
+  defp replace_labels(_ticket_id, :not_supplied), do: :ok
+
+  defp replace_labels(ticket_id, labels) do
+    Repo.delete_all(
+      from(ticket_label in "ticket_labels",
+        where: field(ticket_label, :ticket_id) == type(^ticket_id, :binary_id)
+      )
+    )
+
+    {:ok, ticket_id} = Ecto.UUID.dump(ticket_id)
+
+    Repo.insert_all(
+      "ticket_labels",
+      Enum.map(labels, fn label ->
+        {:ok, label_id} = Ecto.UUID.dump(label.id)
+        %{ticket_id: ticket_id, label_id: label_id}
+      end)
+    )
+
+    :ok
+  end
+
+  defp maybe_replace_labels(_ticket_id, :not_supplied, current_labels, false),
+    do: {:ok, current_labels}
+
+  defp maybe_replace_labels(_ticket_id, _labels, current_labels, false), do: {:ok, current_labels}
+
+  defp maybe_replace_labels(ticket_id, labels, _current_labels, true) do
+    with {:ok, labels} <- resolve_labels_from_names(ticket_id, labels),
+         :ok <- replace_labels(ticket_id, labels) do
+      {:ok, labels}
+    end
+  end
+
+  defp resolve_labels_from_names(ticket_id, names) do
+    project_id =
+      Repo.one!(from(ticket in Ticket, where: ticket.id == ^ticket_id, select: ticket.project_id))
+
+    resolve_labels(project_id, names)
+  end
+
+  defp require_ticket_change(changeset, labels_changed?) do
+    if changeset.valid? and (changeset.changes != %{} or labels_changed?) do
+      :ok
+    else
+      invalid_argument(:base, "must change at least one field")
+    end
+  end
+
+  defp require_status_change(%Ticket{status: status}, status),
+    do: invalid_argument(:status, "must change the status")
+
+  defp require_status_change(_ticket, _status), do: :ok
+
+  defp transition_allowed(ticket, status) when status in [:done, :canceled] do
+    cond do
+      status == :done and blocked_by_dependency?(ticket) ->
+        {:error, %Error{kind: :blocked_by_dependency, message: "ticket has unresolved blockers"}}
+
+      has_non_terminal_subtask?(ticket) ->
+        {:error, %Error{kind: :invalid_transition, message: "ticket has non-terminal subtasks"}}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp transition_allowed(_ticket, _status), do: :ok
+
+  # Task 4 replaces this extension point with the same-project dependency query.
+  defp blocked_by_dependency?(_ticket),
+    do: Application.get_env(:autoboard, :dependency_blocker, false)
+
+  defp has_non_terminal_subtask?(ticket) do
+    Repo.exists?(
+      from(subtask in Ticket,
+        where:
+          subtask.parent_ticket_id == ^ticket.id and
+            subtask.status not in [:done, :canceled]
+      )
+    )
+  end
+
+  defp present(ticket, project \\ nil, labels \\ nil) do
+    ticket =
+      if is_nil(labels), do: Repo.preload(ticket, :labels), else: %{ticket | labels: labels}
+
+    project = project || Repo.preload(ticket, :project).project
+
+    %{ticket | project: project, identifier: "#{project.key}-#{ticket.number}"}
+  end
+
+  defp created_payload(ticket) do
+    %{
+      "identifier" => ticket.identifier,
+      "title" => ticket.title,
+      "status" => Atom.to_string(ticket.status),
+      "priority" => Atom.to_string(ticket.priority),
+      "assignee" => Atom.to_string(ticket.assignee),
+      "parent_ticket_id" => ticket.parent_ticket_id,
+      "labels" => Enum.map(ticket.labels, & &1.name)
+    }
+  end
+
+  defp update_payload(ticket, changeset, old_labels, new_labels, labels_changed?) do
+    changeset.changes
+    |> Map.take([:title, :description, :priority, :assignee])
+    |> Map.new(fn {field, value} ->
+      {Atom.to_string(field),
+       %{"from" => json_value(Map.fetch!(ticket, field)), "to" => json_value(value)}}
+    end)
+    |> maybe_add_label_payload(old_labels, new_labels, labels_changed?)
+  end
+
+  defp maybe_add_label_payload(payload, _old_labels, _new_labels, false), do: payload
+
+  defp maybe_add_label_payload(payload, old_labels, new_labels, true) do
+    Map.put(payload, "labels", %{
+      "from" => Enum.map(old_labels, & &1.name),
+      "to" => Enum.map(new_labels, & &1.name)
+    })
+  end
+
+  defp json_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp json_value(value), do: value
+
+  defp transaction_result({:ok, ticket}), do: {:ok, ticket}
+  defp transaction_result({:error, %Error{} = error}), do: {:error, error}
+
+  defp transaction_result({:error, %Ecto.Changeset{} = changeset}),
+    do: {:error, validation_error(changeset)}
+
+  defp canonical_attrs(attrs) do
+    case Ticket.canonicalize_attrs(attrs) do
+      {:ok, _attrs, [_ | _] = errors} ->
+        {:error,
+         %Error{
+           kind: :validation_failed,
+           message: "ticket validation failed",
+           fields: errors_by_pairs(errors)
+         }}
+
+      {:ok, attrs, []} ->
+        {:ok, attrs}
+
+      :error ->
+        invalid_argument(:attrs, "must be a map")
+    end
+  end
+
+  defp canonical_search_attrs(attrs) do
+    with {:ok, attrs} <- canonical_attrs(attrs) do
+      unsupported = Map.keys(attrs) -- ["project_id", "query"]
+
+      if unsupported == [] do
+        {:ok, attrs}
+      else
+        invalid_argument(:base, "#{inspect(hd(unsupported))} is not allowed")
+      end
+    end
+  end
+
+  defp valid_changeset(%{valid?: true}), do: :ok
+  defp valid_changeset(changeset), do: {:error, validation_error(changeset)}
+
+  defp optional_uuid(nil, _field), do: {:ok, nil}
+  defp optional_uuid(value, field), do: cast_uuid(value, field)
+
+  defp cast_uuid(value, field) do
+    case Ecto.UUID.cast(value) do
+      {:ok, id} -> {:ok, id}
+      :error -> invalid_argument(field, "must be a valid UUID")
+    end
+  end
+
+  defp optional_query(nil), do: {:ok, nil}
+  defp optional_query(value) when is_binary(value), do: {:ok, value}
+  defp optional_query(_value), do: invalid_argument(:query, "must be a string")
+
+  defp normalize_status(status)
+       when status in [:triage, :backlog, :ready, :in_progress, :done, :canceled],
+       do: {:ok, status}
+
+  defp normalize_status(status) when is_binary(status) do
+    case Enum.find(Ticket.statuses(), &(Atom.to_string(&1) == status)) do
+      nil -> invalid_argument(:status, "must be a supported status")
+      status -> {:ok, status}
+    end
+  end
+
+  defp normalize_status(_status), do: invalid_argument(:status, "must be a supported status")
+
+  defp maybe_filter_project(query, nil), do: query
+
+  defp maybe_filter_project(query, project_id),
+    do: where(query, [ticket], ticket.project_id == ^project_id)
+
+  defp maybe_filter_query(query, nil), do: query
+
+  defp maybe_filter_query(query, text) do
+    where(query, [ticket], ilike(ticket.title, ^"%#{text}%"))
+  end
+
+  defp locked_project(id),
+    do: Repo.one(from(project in Project, where: project.id == ^id, lock: "FOR UPDATE"))
+
+  defp locked_ticket(id),
+    do: Repo.one(from(ticket in Ticket, where: ticket.id == ^id, lock: "FOR UPDATE"))
+
+  defp require_project(nil), do: {:error, %Error{kind: :not_found, message: "project not found"}}
+  defp require_project(project), do: {:ok, project}
+  defp require_ticket(nil), do: {:error, %Error{kind: :not_found, message: "ticket not found"}}
+  defp require_ticket(ticket), do: {:ok, ticket}
+
+  defp require_revision(%Ticket{revision: revision}, revision), do: :ok
+
+  defp require_revision(ticket, _expected_revision) do
+    {:error,
+     %Error{kind: :revision_conflict, message: "ticket has changed", current: present(ticket)}}
+  end
+
+  defp validate_expected_revision(revision) when is_integer(revision) and revision > 0, do: :ok
+
+  defp validate_expected_revision(_revision),
+    do: invalid_argument(:expected_revision, "must be a positive integer")
+
+  defp authorize(%Context{scope: :global, actor: actor}) when actor in [:me, :codex], do: :ok
+  defp authorize(_ctx), do: unauthorized()
+
+  defp unauthorized,
+    do:
+      {:error, %Error{kind: :unauthorized, message: "a global authorization context is required"}}
+
+  defp invalid_argument(field, message) do
+    {:error,
+     %Error{
+       kind: :validation_failed,
+       message: "ticket validation failed",
+       fields: %{field => [message]}
+     }}
+  end
+
+  defp validation_error(changeset) do
+    %Error{
+      kind: :validation_failed,
+      message: "ticket validation failed",
+      fields: errors_by_field(changeset)
+    }
+  end
+
+  defp errors_by_pairs(errors), do: Enum.group_by(errors, &elem(&1, 0), &elem(&1, 1))
+
+  defp errors_by_field(changeset) do
+    Ecto.Changeset.traverse_errors(changeset, fn {message, options} ->
+      Enum.reduce(options, message, fn {key, value}, acc ->
+        String.replace(acc, "%{#{key}}", inspect(value))
+      end)
+    end)
+  end
+end
