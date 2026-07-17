@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
-import { chromium, type Browser, type Page } from "playwright"
+import { chromium, type Browser, type Page, type Route } from "playwright"
 import { existsSync } from "node:fs"
 import { join, resolve } from "node:path"
 
@@ -146,7 +146,19 @@ describe("Autoboard MCP to browser acceptance", () => {
     await page.goto(`${baseUrl}/projects/AUTO`, { waitUntil: "domcontentloaded" })
     await page.getByText("Codex leaf", { exact: true }).waitFor({ state: "visible" })
     let blockSseReconnect = false
-    await page.route("**/api/v1/events**", (route) => blockSseReconnect ? route.abort() : route.continue())
+    let blockedSseReconnects = 0
+    const sseRoute = async (route: Route) => {
+      const request = route.request()
+      const isEventStream =
+        request.resourceType() === "eventsource" ||
+        request.headers()["accept"]?.includes("text/event-stream")
+
+      if (!isEventStream || !blockSseReconnect) return route.continue()
+
+      blockedSseReconnects += 1
+      return route.abort()
+    }
+    await page.route("**/api/v1/events**", sseRoute)
     const beforeTransitionUrl = page.url()
     let mainFrameNavigations = 0
     page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) mainFrameNavigations += 1 })
@@ -156,6 +168,7 @@ describe("Autoboard MCP to browser acceptance", () => {
     blockSseReconnect = true
     await restartServer()
     await restartMcp()
+    await expect.poll(() => blockedSseReconnects, { timeout: 10_000 }).toBeGreaterThan(0)
     const persisted = await tool<{ comments: Array<{ body: string }>; attachments: Array<{ original_filename: string }>; activity: unknown[] }>("get_ticket", { ticket_id: subtask.id })
     expect(persisted).toMatchObject({ comments: [{ body: "A durable **MCP** comment." }], attachments: [{ original_filename: "note.txt" }] })
     expect(persisted.activity.length).toBeGreaterThan(0)
@@ -164,6 +177,7 @@ describe("Autoboard MCP to browser acceptance", () => {
     const inProgress = await tool<Ticket>("transition_ticket", { ticket_id: freshCodex.id, expected_revision: freshCodex.revision, status: "in_progress" })
     expect(await page.getByRole("region", { name: "Ready tickets" }).getByText("Codex leaf", { exact: true }).count()).toBe(1)
     blockSseReconnect = false
+    await page.unroute("**/api/v1/events**", sseRoute)
     await page.getByRole("region", { name: "In progress tickets" }).getByText("Codex leaf", { exact: true }).waitFor({ state: "visible" })
     expect(page.url()).toBe(beforeTransitionUrl)
     expect(await page.evaluate(() => window.name)).toBe("autoboard-e2e-live-marker")
