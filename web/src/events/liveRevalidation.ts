@@ -12,10 +12,13 @@ type Options<Timer> = {
 
 export const startActivityRevalidation = <Timer,>(options: Options<Timer>): (() => void) => {
   const revalidation = createRevalidationCoalescer(options.revalidate, options.schedule, options.cancel)
+  let stopped = false
   const fiber = Effect.runFork(Stream.runForEach(options.stream, (event) => Effect.sync(() => {
-    if (options.relevant(event)) revalidation.request()
+    if (!stopped && options.relevant(event)) revalidation.request()
   })))
   return () => {
+    if (stopped) return
+    stopped = true
     revalidation.dispose()
     void Effect.runPromise(Fiber.interrupt(fiber))
   }

@@ -27,12 +27,15 @@ export const isActivityRelevant = (event: ActivityEvent, pathname: string, proje
 
 export const createRevalidationCoalescer = <Timer,>(revalidate: () => void, schedule: (work: () => void) => Timer, cancel: (timer: Timer) => void) => {
   let timer: Timer | undefined
+  let disposed = false
   return {
     request: () => {
-      if (timer !== undefined) return
-      timer = schedule(() => { timer = undefined; revalidate() })
+      if (disposed || timer !== undefined) return
+      timer = schedule(() => { timer = undefined; if (!disposed) revalidate() })
     },
     dispose: () => {
+      if (disposed) return
+      disposed = true
       if (timer !== undefined) cancel(timer)
       timer = undefined
     },

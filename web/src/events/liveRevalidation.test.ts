@@ -38,4 +38,28 @@ describe("startActivityRevalidation", () => {
     stop()
     await vi.waitFor(() => expect(sources[0]!.closed).toBe(true))
   })
+
+  it("stops scheduling synchronously, even before its stream fiber finishes interrupting", async () => {
+    const sources: FakeEventSource[] = []
+    const timers: Array<() => void> = []
+    const revalidate = vi.fn()
+    const stop = startActivityRevalidation({
+      stream: activityStream({ createEventSource: () => { const source = new FakeEventSource(); sources.push(source); return source } }),
+      relevant: () => true,
+      revalidate,
+      schedule: (work) => { timers.push(work); return timers.length },
+      cancel: () => undefined,
+    })
+    await vi.waitFor(() => expect(sources).toHaveLength(1))
+    const listener = [...(sources[0]!.listeners.get("activity") ?? [])][0]!
+    stop()
+    listener({ data: JSON.stringify(event(4)), lastEventId: "4" } as MessageEvent<string>)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(timers).toHaveLength(0)
+    expect(revalidate).not.toHaveBeenCalled()
+    expect(sources[0]!.listeners.get("activity")?.size).toBe(0)
+    expect(sources[0]!.onerror).toBeNull()
+    expect(sources[0]!.closed).toBe(true)
+    stop()
+  })
 })

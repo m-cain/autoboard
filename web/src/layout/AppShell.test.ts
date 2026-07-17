@@ -49,5 +49,8 @@ describe("live revalidation", () => {
     coalesce.request()
     coalesce.dispose()
     expect(scheduled).toBeUndefined()
+    coalesce.request()
+    expect(scheduled).toBeUndefined()
+    expect(revalidated).toBe(1)
   })
 })

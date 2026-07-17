@@ -26,16 +26,24 @@ export const activityStream = (options: ActivityStreamOptions = {}): Stream.Stre
   const cancel = options.cancel ?? ((timer) => window.clearTimeout(timer))
   const endpoint = options.endpoint ?? "/api/v1/events"
   let active: EventSourceLike | undefined
+  let activeActivity: ((event: MessageEvent<string>) => void) | undefined
   let reconnectTimer: Timer | undefined
   let closed = false
   let attempts = 0
   let greatestId = options.lastEventId ?? 0
+
+  const retire = (source: EventSourceLike, onActivity: (event: MessageEvent<string>) => void) => {
+    source.removeEventListener("activity", onActivity)
+    source.onerror = null
+    source.close()
+  }
 
   const connect = () => {
     if (closed || active) return
     const source = createEventSource(eventUrl(endpoint, greatestId))
     active = source
     const onActivity = (message: MessageEvent<string>) => {
+      if (closed || active !== source) return
       try {
         const decoded = decodeActivity(JSON.parse(message.data))
         const reportedId = message.lastEventId === "" ? undefined : Number(message.lastEventId)
@@ -49,13 +57,21 @@ export const activityStream = (options: ActivityStreamOptions = {}): Stream.Stre
     }
     const reconnect = () => {
       if (closed || active !== source || reconnectTimer !== undefined) return
-      source.close()
+      retire(source, onActivity)
       active = undefined
+      activeActivity = undefined
       const delay = Math.min(250 * (2 ** attempts), 10_000)
       attempts += 1
-      reconnectTimer = schedule(() => { reconnectTimer = undefined; connect() }, delay)
+      let timer: Timer
+      timer = schedule(() => {
+        if (closed || reconnectTimer !== timer) return
+        reconnectTimer = undefined
+        connect()
+      }, delay)
+      reconnectTimer = timer
     }
     source.addEventListener("activity", onActivity)
+    activeActivity = onActivity
     source.onerror = reconnect
   }
 
@@ -63,7 +79,9 @@ export const activityStream = (options: ActivityStreamOptions = {}): Stream.Stre
   return Effect.sync(() => {
     closed = true
     if (reconnectTimer !== undefined) cancel(reconnectTimer)
-    active?.close()
+    reconnectTimer = undefined
+    if (active && activeActivity) retire(active, activeActivity)
     active = undefined
+    activeActivity = undefined
   })
 })
