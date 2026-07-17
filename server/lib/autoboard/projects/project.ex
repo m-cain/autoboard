@@ -40,7 +40,8 @@ defmodule Autoboard.Projects.Project do
     |> validate_change(:description, fn :description, description ->
       if is_binary(description), do: [], else: [description: "must be a string"]
     end)
-    |> put_change(:revision, project.revision + 1)
+    |> require_user_field_change()
+    |> increment_revision(project)
   end
 
   def state_changeset(project, state) when state in [:active, :archived] do
@@ -113,4 +114,20 @@ defmodule Autoboard.Projects.Project do
 
   defp normalize_field(field) when is_atom(field), do: field
   defp normalize_field(field), do: String.to_existing_atom(field)
+
+  defp require_user_field_change(%{valid?: false} = changeset), do: changeset
+
+  defp require_user_field_change(changeset) do
+    if Map.take(changeset.changes, [:name, :description]) == %{} do
+      add_error(changeset, :base, "must change at least one field")
+    else
+      changeset
+    end
+  end
+
+  defp increment_revision(%{valid?: false} = changeset, _project), do: changeset
+
+  defp increment_revision(changeset, project) do
+    put_change(changeset, :revision, project.revision + 1)
+  end
 end

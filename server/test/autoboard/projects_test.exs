@@ -44,6 +44,27 @@ defmodule Autoboard.ProjectsTest do
     assert event_count(project.id) == 1
   end
 
+  test "empty project updates leave revision and activity unchanged", %{ctx: ctx} do
+    project = project_fixture(ctx)
+
+    assert {:error, %Error{kind: :validation_failed}} =
+             Projects.update(ctx, project.id, project.revision, %{})
+
+    assert_unchanged_project(ctx, project)
+  end
+
+  test "same-value project updates leave revision and activity unchanged", %{ctx: ctx} do
+    project = project_fixture(ctx)
+
+    assert {:error, %Error{kind: :validation_failed}} =
+             Projects.update(ctx, project.id, project.revision, %{
+               name: project.name,
+               description: project.description
+             })
+
+    assert_unchanged_project(ctx, project)
+  end
+
   test "update activity records changed user fields with old and new values", %{ctx: ctx} do
     project = project_fixture(ctx)
 
@@ -129,5 +150,13 @@ defmodule Autoboard.ProjectsTest do
 
   defp event_count(project_id) do
     Repo.aggregate(from(event in Event, where: event.project_id == ^project_id), :count)
+  end
+
+  defp assert_unchanged_project(ctx, project) do
+    assert {:ok, unchanged} = Projects.fetch(ctx, project.id)
+    assert unchanged.revision == project.revision
+    assert unchanged.name == project.name
+    assert unchanged.description == project.description
+    assert event_count(project.id) == 1
   end
 end
