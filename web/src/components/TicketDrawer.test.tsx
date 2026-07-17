@@ -12,7 +12,7 @@ afterEach(cleanup)
 describe("TicketDrawer", () => {
   it("traps initial focus, closes on Escape by navigation, and restores page scrolling", async () => {
     document.body.style.overflow = "auto"
-    const { unmount } = render(<MemoryRouter initialEntries={["/tickets/AUTO-1"]}><TicketDrawer closeTo="/projects/AUTO"><a href="#detail">Detail link</a></TicketDrawer><CurrentPath /></MemoryRouter>)
+    const { unmount } = render(<MemoryRouter initialEntries={["/projects/AUTO", "/tickets/AUTO-1"]} initialIndex={1}><TicketDrawer closeTo="/projects/AUTO"><a href="#detail">Detail link</a></TicketDrawer><CurrentPath /></MemoryRouter>)
 
     const close = screen.getByRole("link", { name: "Back to board" })
     expect(close).toHaveFocus()

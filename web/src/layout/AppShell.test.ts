@@ -10,7 +10,11 @@ const projects = [{ id: projectId, key: "AUTO", name: "Autoboard", description: 
 describe("live revalidation", () => {
   it("only invalidates the current project or ticket", () => {
     expect(isActivityRelevant(event, "/projects/AUTO", projects)).toBe(true)
-    expect(isActivityRelevant(event, "/tickets/AUTO-1", projects, { id: ticketId, project_id: projectId })).toBe(true)
+    expect(isActivityRelevant(event, "/tickets/AUTO-1", projects, { id: ticketId, project_id: projectId, drawer: false })).toBe(true)
+    expect(isActivityRelevant({ ...event, ticket_id: "33333333-3333-4333-8333-333333333333" }, "/tickets/AUTO-1", projects, { id: ticketId, project_id: projectId, drawer: false })).toBe(false)
+    expect(isActivityRelevant({ ...event, ticket_id: null }, "/tickets/AUTO-1", projects, { id: ticketId, project_id: projectId, drawer: false })).toBe(true)
+    expect(isActivityRelevant({ ...event, ticket_id: "33333333-3333-4333-8333-333333333333" }, "/tickets/AUTO-1", projects, { id: ticketId, project_id: projectId, drawer: true })).toBe(true)
+    expect(isActivityRelevant({ ...event, ticket_id: null }, "/projects", projects)).toBe(true)
     expect(isActivityRelevant(event, "/projects/OTHER", projects)).toBe(false)
     expect(isActivityRelevant({ ...event, project_id: "33333333-3333-4333-8333-333333333333" }, "/triage", projects)).toBe(false)
   })

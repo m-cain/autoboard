@@ -4,7 +4,7 @@ import type { TicketSummary } from "@autoboard/contracts"
 export const TicketCard = ({ ticket }: { readonly ticket: TicketSummary }) => {
   const location = useLocation()
   return <article className="ticket-card">
-    <Link className="ticket-card__title" to={`/tickets/${encodeURIComponent(ticket.identifier)}`} state={{ backgroundLocation: location }}>
+    <Link className="ticket-card__title" data-ticket-identifier={ticket.identifier} to={`/tickets/${encodeURIComponent(ticket.identifier)}`} state={{ backgroundLocation: location, drawerDepth: 1, originIdentifier: ticket.identifier }}>
       {ticket.title}
     </Link>
     <p className="ticket-card__identifier">{ticket.identifier}</p>

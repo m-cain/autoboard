@@ -17,6 +17,16 @@ defmodule AutoboardWeb.EventsStreamTest do
     assert {:error, :invalid_last_event_id} = EventsStream.parse_last_event_id(["1", "2"])
   end
 
+  test "prefers the native Last-Event-ID header over the explicit reconnect cursor" do
+    assert ["9"] = EventsStream.cursor_values(conn(:get, "/api/v1/events?last_event_id=9"))
+
+    assert ["4"] =
+             EventsStream.cursor_values(
+               conn(:get, "/api/v1/events?last_event_id=9")
+               |> Plug.Conn.put_req_header("last-event-id", "4")
+             )
+  end
+
   test "formats the complete ActivityEvent payload used by the browser contract" do
     event = %{
       id: 8,

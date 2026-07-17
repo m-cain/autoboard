@@ -36,19 +36,19 @@ export const RouterAppShell = () => {
   const matches = useMatches()
   const ticketData = matches.find((match) => match.id === "ticket")?.loaderData as TicketRouteData | undefined
   const projects = [...data.projects.active, ...data.projects.archived]
-  const current = useRef({ projects, ticket: ticketData?.ticket })
-  current.current = { projects, ticket: ticketData?.ticket }
+  const current = useRef({ pathname: location.pathname, projects, ticket: ticketData?.ticket, drawer: false })
+  current.current = { pathname: location.pathname, projects, ticket: ticketData?.ticket, drawer: typeof location.state === "object" && location.state !== null && "backgroundLocation" in location.state }
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return
     return startActivityRevalidation({
       stream: activityStream(),
-      relevant: (event) => isActivityRelevant(event, location.pathname, current.current.projects, current.current.ticket),
+      relevant: (event) => isActivityRelevant(event, current.current.pathname, current.current.projects, current.current.ticket ? { ...current.current.ticket, drawer: current.current.drawer } : undefined),
       revalidate,
       schedule: (work) => window.setTimeout(work, 0),
       cancel: (timer) => window.clearTimeout(timer),
     })
-  }, [location.pathname, revalidate])
+  }, [revalidate])
 
   return <AppShell triageCount={data.triage.tickets.length} projects={data.projects.active} />
 }

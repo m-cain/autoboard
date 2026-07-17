@@ -49,9 +49,11 @@ const backgroundPath = (state: unknown): string | undefined => {
 }
 const TicketRoute = () => {
   const data = useLoaderData() as TicketRouteData
-  const closeTo = backgroundPath(useLocation().state)
+  const state = useLocation().state
+  const closeTo = backgroundPath(state)
   if (!closeTo) return <TicketDetailPage ticket={data.ticket} />
-  return <div className="ticket-drawer-layer"><div aria-hidden="true"><ProjectBoardPage board={data.board} /></div><TicketDrawer closeTo={closeTo}><TicketDetailPage ticket={data.ticket} /></TicketDrawer></div>
+  const originIdentifier = typeof state === "object" && state !== null && "originIdentifier" in state && typeof state.originIdentifier === "string" ? state.originIdentifier : undefined
+  return <div className="ticket-drawer-layer"><div aria-hidden="true"><ProjectBoardPage board={data.board} /></div><TicketDrawer closeTo={closeTo} originIdentifier={originIdentifier}><TicketDetailPage ticket={data.ticket} /></TicketDrawer></div>
 }
 const CanceledRoute = () => {
   const { project, tickets } = useLoaderData() as { readonly project: Project; readonly tickets: readonly TicketSummary[] }

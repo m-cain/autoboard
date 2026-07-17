@@ -11,7 +11,7 @@ defmodule AutoboardWeb.EventsStream do
 
   @spec stream(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def stream(conn, options \\ []) do
-    with {:ok, last_id} <- parse_last_event_id(last_event_ids(conn)),
+    with {:ok, last_id} <- parse_last_event_id(cursor_values(conn)),
          :ok <- Activity.subscribe() do
       try do
         stream_subscribed(conn, last_id, options)
@@ -218,7 +218,8 @@ defmodule AutoboardWeb.EventsStream do
   # Native EventSource automatically sends Last-Event-ID when it owns a retry.
   # A client-controlled exponential reconnect cannot set arbitrary headers, so
   # accept the equivalent query cursor only when the header is absent.
-  defp last_event_ids(conn) do
+  @spec cursor_values(Plug.Conn.t()) :: [String.t()]
+  def cursor_values(conn) do
     case get_req_header(conn, "last-event-id") do
       [] ->
         case conn

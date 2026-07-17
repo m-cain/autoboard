@@ -37,15 +37,15 @@ const fibers: Fiber.Fiber<unknown, unknown>[] = []
 afterEach(async () => { await Promise.all(fibers.splice(0).map((fiber) => Effect.runPromise(Fiber.interrupt(fiber)))) })
 
 describe("activityStream", () => {
-  it("decodes activity events, isolates malformed payloads, and reconnects from the greatest seen ID", async () => {
+  it("emits only strictly increasing consistent ActivityEvents and reconnects from the greatest cursor", async () => {
     const sources: FakeEventSource[] = []
     const urls: string[] = []
-    const reconnects: Array<() => void> = []
+    const reconnects: Array<{ readonly work: () => void; readonly delay: number }> = []
     const seen: number[] = []
     const fiber = Effect.runFork(Stream.runForEach(
       activityStream({
         createEventSource: (url) => { urls.push(url); const source = new FakeEventSource(); sources.push(source); return source },
-        schedule: (reconnect) => { reconnects.push(reconnect); return reconnects.length },
+        schedule: (reconnect, delay) => { reconnects.push({ work: reconnect, delay }); return reconnects.length },
         cancel: () => undefined,
       }),
       (activity) => Effect.sync(() => seen.push(activity.id)),
@@ -55,13 +55,30 @@ describe("activityStream", () => {
 
     sources[0]!.emit("activity", "not JSON")
     sources[0]!.emit("activity", JSON.stringify({ ...event, id: 8 }), "8")
+    sources[0]!.emit("activity", JSON.stringify({ ...event, id: 8 }), "8")
+    sources[0]!.emit("activity", JSON.stringify({ ...event, id: 7 }), "7")
+    sources[0]!.emit("activity", JSON.stringify({ ...event, id: 11 }), "10")
     sources[0]!.emit("activity", JSON.stringify(event), "12")
     await vi.waitFor(() => expect(seen).toEqual([8, 12]))
 
     sources[0]!.fail()
-    expect(reconnects).toHaveLength(1)
-    reconnects[0]!()
+    expect(reconnects.map(({ delay }) => delay)).toEqual([250])
+    reconnects[0]!.work()
     expect(urls[1]).toContain("last_event_id=12")
     expect(sources[0]!.closed).toBe(true)
+    sources[1]!.fail()
+    reconnects[1]!.work()
+    sources[2]!.fail()
+    reconnects[2]!.work()
+    sources[3]!.fail()
+    reconnects[3]!.work()
+    sources[4]!.fail()
+    reconnects[4]!.work()
+    sources[5]!.fail()
+    reconnects[5]!.work()
+    sources[6]!.fail()
+    reconnects[6]!.work()
+    sources[7]!.fail()
+    expect(reconnects.map(({ delay }) => delay)).toEqual([250, 500, 1000, 2000, 4000, 8000, 10_000, 10_000])
   })
 })

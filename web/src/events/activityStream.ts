@@ -38,7 +38,9 @@ export const activityStream = (options: ActivityStreamOptions = {}): Stream.Stre
     const onActivity = (message: MessageEvent<string>) => {
       try {
         const decoded = decodeActivity(JSON.parse(message.data))
-        greatestId = Math.max(greatestId, decoded.id, Number.parseInt(message.lastEventId, 10) || 0)
+        const reportedId = message.lastEventId === "" ? undefined : Number(message.lastEventId)
+        if ((reportedId !== undefined && (!Number.isSafeInteger(reportedId) || reportedId !== decoded.id)) || decoded.id <= greatestId) return
+        greatestId = decoded.id
         attempts = 0
         void emit.single(decoded)
       } catch {
