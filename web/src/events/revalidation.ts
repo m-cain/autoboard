@@ -4,10 +4,22 @@ type CurrentTicket = { readonly id: string; readonly project_id: string; readonl
 
 const payloadId = (payload: Record<string, unknown>, key: string): string | undefined => typeof payload[key] === "string" ? payload[key] : undefined
 
-export const isActivityRelevant = (event: ActivityEvent, pathname: string, projects: readonly Project[], currentTicket?: CurrentTicket): boolean => {
-  if (event.event_type.startsWith("project.") || ["ticket.created", "ticket.updated", "ticket.transitioned"].includes(event.event_type)) return true
-  if (pathname === "/" || pathname === "/projects") return event.ticket_id === null
-  if (pathname === "/triage") return projects.some((project) => project.id === event.project_id)
+const transitionTouchesTriage = (payload: Record<string, unknown>): boolean => {
+  const status = payload.status
+  return typeof status === "object" && status !== null &&
+    (("from" in status && status.from === "triage") || ("to" in status && status.to === "triage"))
+}
+
+const affectsRootData = (event: ActivityEvent, rootTriageTicketIds: readonly string[]): boolean =>
+  event.event_type.startsWith("project.") ||
+  (event.event_type === "ticket.created" && event.payload.status === "triage") ||
+  (event.event_type === "ticket.transitioned" && transitionTouchesTriage(event.payload)) ||
+  (event.event_type === "ticket.updated" && event.ticket_id !== null && rootTriageTicketIds.includes(event.ticket_id))
+
+export const isActivityRelevant = (event: ActivityEvent, pathname: string, projects: readonly Project[], currentTicket?: CurrentTicket, rootTriageTicketIds: readonly string[] = []): boolean => {
+  if (affectsRootData(event, rootTriageTicketIds)) return true
+  if (pathname === "/" || pathname === "/projects") return false
+  if (pathname === "/triage") return event.ticket_id !== null && rootTriageTicketIds.includes(event.ticket_id)
   if (/^\/tickets\/[^/]+$/.test(pathname)) {
     if (!currentTicket) return false
     return currentTicket.drawer
