@@ -1,6 +1,8 @@
 import type { ActivityEvent, Project } from "@autoboard/contracts"
 
-type CurrentTicket = { readonly id: string; readonly project_id: string; readonly drawer: boolean }
+type CurrentTicket = { readonly id: string; readonly project_id: string; readonly drawer: boolean; readonly relatedTicketIds?: readonly string[] }
+
+const payloadId = (payload: Record<string, unknown>, key: string): string | undefined => typeof payload[key] === "string" ? payload[key] : undefined
 
 export const isActivityRelevant = (event: ActivityEvent, pathname: string, projects: readonly Project[], currentTicket?: CurrentTicket): boolean => {
   if (pathname === "/" || pathname === "/projects") return event.ticket_id === null
@@ -9,7 +11,13 @@ export const isActivityRelevant = (event: ActivityEvent, pathname: string, proje
     if (!currentTicket) return false
     return currentTicket.drawer
       ? event.project_id === currentTicket.project_id
-      : event.ticket_id === currentTicket.id || (event.ticket_id === null && event.project_id === currentTicket.project_id)
+      : event.project_id === currentTicket.project_id && (
+        event.ticket_id === null ||
+        event.ticket_id === currentTicket.id ||
+        currentTicket.relatedTicketIds?.includes(event.ticket_id ?? "") === true ||
+        (event.event_type === "ticket.created" && payloadId(event.payload, "parent_ticket_id") === currentTicket.id) ||
+        (event.event_type.startsWith("dependency.") && payloadId(event.payload, "blocker_ticket_id") === currentTicket.id)
+      )
   }
   const projectMatch = /^\/projects\/([^/]+)(?:\/canceled)?$/.exec(pathname)
   if (!projectMatch) return false

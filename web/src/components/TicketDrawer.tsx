@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useRef } from "react"
 import { Link, useNavigate } from "react-router"
+import { prepareBoardSnapshotRestore } from "../boardState.js"
 
 const focusable = "a[href], [tabindex]:not([tabindex='-1'])"
 
-export const TicketDrawer = ({ closeTo, originIdentifier, children }: { readonly closeTo: string; readonly originIdentifier?: string; readonly children: React.ReactNode }) => {
+export const TicketDrawer = ({ closeTo, originIdentifier, drawerDepth, focusKey, boardSnapshotKey, children }: { readonly closeTo: string; readonly originIdentifier?: string; readonly drawerDepth: number; readonly focusKey: string; readonly boardSnapshotKey?: string; readonly children: React.ReactNode }) => {
   const navigate = useNavigate()
   const dialog = useRef<HTMLElement>(null)
-  const closing = useRef(false)
-  const close = useCallback(() => { closing.current = true; navigate(-1) }, [navigate])
+  const closeAllIntent = useRef(false)
+  const browserBackIntent = useRef(false)
+  const depth = useRef(drawerDepth)
+  const origin = useRef(originIdentifier)
+  depth.current = drawerDepth
+  origin.current = originIdentifier
+  const snapshotKey = useRef(boardSnapshotKey)
+  snapshotKey.current = boardSnapshotKey
+  const close = useCallback(() => { closeAllIntent.current = true; prepareBoardSnapshotRestore(snapshotKey.current); navigate(-depth.current) }, [navigate])
 
   useEffect(() => {
     const bodyOverflow = document.body.style.overflow
@@ -25,15 +33,20 @@ export const TicketDrawer = ({ closeTo, originIdentifier, children }: { readonly
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
     }
     document.addEventListener("keydown", onKeyDown)
-    const onPopState = () => { closing.current = true }
+    const onPopState = () => { browserBackIntent.current = true; if (depth.current === 1) prepareBoardSnapshotRestore(snapshotKey.current) }
     window.addEventListener("popstate", onPopState)
     return () => {
       document.body.style.overflow = bodyOverflow
       document.removeEventListener("keydown", onKeyDown)
       window.removeEventListener("popstate", onPopState)
-      if (closing.current && originIdentifier) window.setTimeout(() => document.querySelector<HTMLElement>(`[data-ticket-identifier="${originIdentifier}"]`)?.focus(), 0)
+      if ((closeAllIntent.current || browserBackIntent.current) && origin.current) window.setTimeout(() => document.querySelector<HTMLElement>(`[data-ticket-identifier="${origin.current}"]`)?.focus(), 0)
     }
-  }, [close, originIdentifier])
+  }, [close])
+
+  useEffect(() => {
+    if (browserBackIntent.current) browserBackIntent.current = false
+    if (dialog.current && !dialog.current.contains(document.activeElement)) dialog.current.querySelector<HTMLElement>(focusable)?.focus()
+  }, [focusKey])
 
   return <div className="ticket-drawer-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) close() }}>
     <aside ref={dialog} className="ticket-drawer" role="dialog" aria-modal="true" aria-label="Ticket detail">

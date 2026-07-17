@@ -19,6 +19,24 @@ describe("live revalidation", () => {
     expect(isActivityRelevant({ ...event, project_id: "33333333-3333-4333-8333-333333333333" }, "/triage", projects)).toBe(false)
   })
 
+  it("invalidates a direct detail page for its visible relationships and newly created relationships only", () => {
+    const current = {
+      id: ticketId,
+      project_id: projectId,
+      drawer: false,
+      relatedTicketIds: ["33333333-3333-4333-8333-333333333333"],
+    }
+    const related = "33333333-3333-4333-8333-333333333333"
+    const unrelated = "44444444-4444-4444-8444-444444444444"
+
+    expect(isActivityRelevant({ ...event, ticket_id: related }, "/tickets/AUTO-1", projects, current)).toBe(true)
+    expect(isActivityRelevant({ ...event, ticket_id: unrelated }, "/tickets/AUTO-1", projects, current)).toBe(false)
+    expect(isActivityRelevant({ ...event, event_type: "ticket.created", ticket_id: unrelated, payload: { parent_ticket_id: ticketId } }, "/tickets/AUTO-1", projects, current)).toBe(true)
+    expect(isActivityRelevant({ ...event, event_type: "ticket.created", ticket_id: unrelated, payload: { parent_ticket_id: unrelated } }, "/tickets/AUTO-1", projects, current)).toBe(false)
+    expect(isActivityRelevant({ ...event, event_type: "dependency.created", ticket_id: unrelated, payload: { blocker_ticket_id: ticketId } }, "/tickets/AUTO-1", projects, current)).toBe(true)
+    expect(isActivityRelevant({ ...event, event_type: "dependency.deleted", ticket_id: unrelated, payload: { blocker_ticket_id: unrelated } }, "/tickets/AUTO-1", projects, current)).toBe(false)
+  })
+
   it("coalesces a burst into one revalidation and cancels pending work", () => {
     let scheduled: (() => void) | undefined
     let revalidated = 0

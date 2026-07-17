@@ -6,6 +6,7 @@ import { createMemoryRouter, RouterProvider } from "react-router"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ApiClientService } from "./api/client.js"
 import { createAppRoutes } from "./router.js"
+import { boardSnapshot } from "./boardState.js"
 import type { Project, ProjectBoard, TicketDetail, TicketSummary } from "@autoboard/contracts"
 
 const project = { id: "11111111-1111-4111-8111-111111111111", key: "AUTO", name: "Autoboard", description: "", state: "active", revision: 1, inserted_at: "2026-07-16T12:34:56Z", updated_at: "2026-07-16T12:34:56Z" } as Project
@@ -126,10 +127,62 @@ describe("data routes", () => {
     fireEvent.click(nested)
     expect(await screen.findByRole("heading", { name: "Nested ticket" })).toBeInTheDocument()
     expect(screen.getByRole("dialog", { name: "Ticket detail" })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("link", { name: "Back to board" }))
+    await router.navigate(-1)
     expect(await screen.findByRole("heading", { name: "Inspect ticket" })).toBeInTheDocument()
     expect(screen.getByRole("dialog", { name: "Ticket detail" })).toBeInTheDocument()
+    expect(document.activeElement?.closest("[role=dialog]")).toBe(screen.getByRole("dialog", { name: "Ticket detail" }))
     fireEvent.click(screen.getByRole("link", { name: "Back to board" }))
     await vi.waitFor(() => expect(router.state.location.pathname).toBe("/projects/AUTO"))
+  })
+
+  it("opens a drawer only from a project board, not triage or canceled views", async () => {
+    const listClient = { ...client, listTriage: () => Effect.succeed({ tickets: [ticketSummary] }), getCanceledTickets: () => Effect.succeed({ tickets: [ticketSummary] }) } as ApiClientService
+    const { router } = renderRoute("/triage", listClient)
+    await screen.findByRole("heading", { name: "Triage" })
+    fireEvent.click(screen.getByRole("link", { name: "Inspect ticket" }))
+    await screen.findByRole("heading", { name: "Inspect ticket" })
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    await router.navigate("/projects/AUTO/canceled")
+    fireEvent.click(await screen.findByRole("link", { name: "Inspect ticket" }))
+    await screen.findByRole("heading", { name: "Inspect ticket" })
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+    await router.navigate("/tickets/AUTO-1", { state: { backgroundLocation: { pathname: "/projects/AUTO" }, drawerDepth: 1, originIdentifier: "AUTO-1" } })
+    expect(await screen.findByRole("dialog", { name: "Ticket detail" })).toBeInTheDocument()
+  })
+
+  it("closes a depth-two drawer directly to its originating card", async () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined)
+    const { router } = renderRoute("/projects/AUTO")
+    fireEvent.click(await screen.findByRole("link", { name: "Inspect ticket" }))
+    fireEvent.click(await screen.findByRole("link", { name: /Nested ticket/ }))
+    expect(await screen.findByRole("heading", { name: "Nested ticket" })).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: "Escape" })
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/projects/AUTO"))
+    await vi.waitFor(() => expect(document.activeElement).toHaveAttribute("data-ticket-identifier", "AUTO-1"))
+    scrollTo.mockRestore()
+  })
+
+  it("preserves board window and Kanban scroll through a nested drawer and final close", async () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined)
+    Object.defineProperty(window, "scrollX", { configurable: true, value: 17 })
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 81 })
+    const { router } = renderRoute("/projects/AUTO")
+    const title = await screen.findByRole("link", { name: "Inspect ticket" })
+    const initialScroller = document.querySelector<HTMLElement>("[data-kanban-scroll]")
+    expect(initialScroller).not.toBeNull()
+    initialScroller!.scrollLeft = 43
+    fireEvent.click(title)
+    await screen.findByRole("dialog", { name: "Ticket detail" })
+    expect(boardSnapshot((router.state.location.state as { boardSnapshotKey: string }).boardSnapshotKey)).toEqual({ scrollX: 17, scrollY: 81, kanbanScrollLeft: 43 })
+    expect(document.querySelector<HTMLElement>("[data-kanban-scroll]")?.scrollLeft).toBe(43)
+    fireEvent.click(screen.getByRole("link", { name: /Nested ticket/ }))
+    await screen.findByRole("heading", { name: "Nested ticket" })
+    await router.navigate(-1)
+    await screen.findByRole("heading", { name: "Inspect ticket" })
+    fireEvent.keyDown(document, { key: "Escape" })
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/projects/AUTO"))
+    expect(document.querySelector<HTMLElement>("[data-kanban-scroll]")?.scrollLeft).toBe(43)
+    expect(scrollTo).toHaveBeenLastCalledWith(17, 81)
+    scrollTo.mockRestore()
   })
 })

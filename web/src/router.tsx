@@ -10,6 +10,7 @@ import { TriagePage } from "./pages/TriagePage.js"
 import { CanceledPage } from "./pages/CanceledPage.js"
 import { TicketDetailPage } from "./pages/TicketDetailPage.js"
 import { TicketDrawer } from "./components/TicketDrawer.js"
+import { boardSnapshot, boardSnapshotToRestore, clearBoardSnapshot } from "./boardState.js"
 import type { Project, ProjectBoard, TicketDetail, TicketSummary } from "@autoboard/contracts"
 
 type TicketListData = { readonly tickets: readonly TicketSummary[] }
@@ -34,26 +35,34 @@ const TriageRoute = () => {
   const root = useRouteLoaderData("root") as RootData
   return <TriagePage tickets={root.triage.tickets} projects={root.projects.active} />
 }
-const BoardRoute = () => <ProjectBoardPage board={useLoaderData()} />
+const BoardRoute = () => {
+  const location = useLocation()
+  const snapshot = boardSnapshotToRestore(location.key)
+  return <ProjectBoardPage board={useLoaderData() as ProjectBoard} restoreSnapshot={snapshot} onSnapshotRestored={snapshot ? () => clearBoardSnapshot(location.key) : undefined} />
+}
 const ticketIdentifier = (params: Record<string, string | undefined>): string => {
   if (!params.identifier) throw new HttpError({ status: 404, message: "Ticket not found" })
   return params.identifier
 }
-const backgroundPath = (state: unknown): string | undefined => {
+type DrawerLocationState = { readonly backgroundLocation: unknown; readonly drawerDepth?: unknown; readonly originIdentifier?: unknown; readonly boardSnapshotKey?: unknown }
+const backgroundPath = (state: unknown, projectKey: string): string | undefined => {
   if (typeof state !== "object" || state === null || !("backgroundLocation" in state)) return undefined
   const background = state.backgroundLocation
   if (typeof background !== "object" || background === null || !("pathname" in background) || typeof background.pathname !== "string") return undefined
-  const search = "search" in background && typeof background.search === "string" ? background.search : ""
-  const hash = "hash" in background && typeof background.hash === "string" ? background.hash : ""
-  return `${background.pathname}${search}${hash}`
+  const expected = `/projects/${encodeURIComponent(projectKey)}`
+  return background.pathname === expected ? expected : undefined
 }
 const TicketRoute = () => {
   const data = useLoaderData() as TicketRouteData
   const state = useLocation().state
-  const closeTo = backgroundPath(state)
+  const closeTo = backgroundPath(state, data.ticket.project.key)
   if (!closeTo) return <TicketDetailPage ticket={data.ticket} />
-  const originIdentifier = typeof state === "object" && state !== null && "originIdentifier" in state && typeof state.originIdentifier === "string" ? state.originIdentifier : undefined
-  return <div className="ticket-drawer-layer"><div aria-hidden="true"><ProjectBoardPage board={data.board} /></div><TicketDrawer closeTo={closeTo} originIdentifier={originIdentifier}><TicketDetailPage ticket={data.ticket} /></TicketDrawer></div>
+  const drawerState = state as DrawerLocationState
+  const originIdentifier = typeof drawerState.originIdentifier === "string" ? drawerState.originIdentifier : undefined
+  const drawerDepth = typeof drawerState.drawerDepth === "number" && Number.isInteger(drawerState.drawerDepth) && drawerState.drawerDepth > 0 ? drawerState.drawerDepth : 1
+  const snapshot = typeof drawerState.boardSnapshotKey === "string" ? boardSnapshot(drawerState.boardSnapshotKey) : undefined
+  const snapshotKey = typeof drawerState.boardSnapshotKey === "string" ? drawerState.boardSnapshotKey : undefined
+  return <div className="ticket-drawer-layer"><div aria-hidden="true"><ProjectBoardPage board={data.board} restoreSnapshot={snapshot} /></div><TicketDrawer closeTo={closeTo} originIdentifier={originIdentifier} drawerDepth={drawerDepth} focusKey={data.ticket.id} boardSnapshotKey={snapshotKey}><TicketDetailPage ticket={data.ticket} /></TicketDrawer></div>
 }
 const CanceledRoute = () => {
   const { project, tickets } = useLoaderData() as { readonly project: Project; readonly tickets: readonly TicketSummary[] }

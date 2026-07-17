@@ -6,7 +6,12 @@ import { Markdown } from "../components/Markdown.js"
 const ticketPath = (identifier: string) => `/tickets/${encodeURIComponent(identifier)}`
 
 type DrawerState = { readonly backgroundLocation: unknown; readonly drawerDepth?: number; readonly originIdentifier?: string }
-const drawerState = (state: unknown): DrawerState | undefined => typeof state === "object" && state !== null && "backgroundLocation" in state ? state as DrawerState : undefined
+const drawerState = (state: unknown): DrawerState | undefined => {
+  if (typeof state !== "object" || state === null || !("backgroundLocation" in state)) return undefined
+  const background = state.backgroundLocation
+  if (typeof background !== "object" || background === null || !("pathname" in background) || typeof background.pathname !== "string" || !/^\/projects\/[^/]+$/.test(background.pathname)) return undefined
+  return state as DrawerState
+}
 
 const TicketLinks = ({ tickets, empty, state }: { readonly tickets: readonly TicketSummary[]; readonly empty: string; readonly state?: DrawerState }) => (
   tickets.length === 0 ? <p className="empty-state">{empty}</p> : <ul className="detail-ticket-links">

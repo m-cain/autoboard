@@ -12,7 +12,7 @@ afterEach(cleanup)
 describe("TicketDrawer", () => {
   it("traps initial focus, closes on Escape by navigation, and restores page scrolling", async () => {
     document.body.style.overflow = "auto"
-    const { unmount } = render(<MemoryRouter initialEntries={["/projects/AUTO", "/tickets/AUTO-1"]} initialIndex={1}><TicketDrawer closeTo="/projects/AUTO"><a href="#detail">Detail link</a></TicketDrawer><CurrentPath /></MemoryRouter>)
+    const { unmount } = render(<MemoryRouter initialEntries={["/projects/AUTO", "/tickets/AUTO-1"]} initialIndex={1}><TicketDrawer closeTo="/projects/AUTO" drawerDepth={1} focusKey="ticket-1"><a href="#detail">Detail link</a></TicketDrawer><CurrentPath /></MemoryRouter>)
 
     const close = screen.getByRole("link", { name: "Back to board" })
     expect(close).toHaveFocus()
@@ -21,5 +21,11 @@ describe("TicketDrawer", () => {
     await vi.waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent("/projects/AUTO"))
     unmount()
     expect(document.body.style.overflow).toBe("auto")
+  })
+
+  it("uses the drawer depth for backdrop and close-link exits", async () => {
+    const { container } = render(<MemoryRouter initialEntries={["/projects/AUTO", "/tickets/AUTO-1", "/tickets/AUTO-2"]} initialIndex={2}><TicketDrawer closeTo="/projects/AUTO" drawerDepth={2} focusKey="ticket-2"><a href="#detail">Detail link</a></TicketDrawer><CurrentPath /></MemoryRouter>)
+    fireEvent.mouseDown(container.querySelector(".ticket-drawer-backdrop")!)
+    await vi.waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent("/projects/AUTO"))
   })
 })

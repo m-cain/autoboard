@@ -37,7 +37,11 @@ export const RouterAppShell = () => {
   const ticketData = matches.find((match) => match.id === "ticket")?.loaderData as TicketRouteData | undefined
   const projects = [...data.projects.active, ...data.projects.archived]
   const current = useRef({ pathname: location.pathname, projects, ticket: ticketData?.ticket, drawer: false })
-  current.current = { pathname: location.pathname, projects, ticket: ticketData?.ticket, drawer: typeof location.state === "object" && location.state !== null && "backgroundLocation" in location.state }
+  const ticket = ticketData?.ticket
+  const relatedTicketIds = ticket ? [ticket.parent, ...ticket.subtasks, ...ticket.blockers, ...ticket.blocked_tickets].filter((related): related is { readonly id: string } => related !== null).map((related) => related.id) : undefined
+  const background = typeof location.state === "object" && location.state !== null && "backgroundLocation" in location.state ? location.state.backgroundLocation : undefined
+  const drawer = Boolean(ticket && typeof background === "object" && background !== null && "pathname" in background && background.pathname === `/projects/${encodeURIComponent(ticket.project.key)}`)
+  current.current = { pathname: location.pathname, projects, ticket: ticket ? { ...ticket, relatedTicketIds } : undefined, drawer }
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return
