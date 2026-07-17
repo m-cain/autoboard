@@ -36,7 +36,12 @@ defmodule Autoboard.Activity do
     if Repo.in_transaction?() do
       {:error, :nested_transaction}
     else
-      case Repo.transaction(fun) do
+      case Repo.transaction(fn ->
+             case acquire_activity_lock() do
+               :ok -> fun.()
+               {:error, reason} -> Repo.rollback(reason)
+             end
+           end) do
         {:ok, {result, events}} when is_list(events) ->
           Enum.each(events, &safe_broadcast/1)
           {:ok, result}

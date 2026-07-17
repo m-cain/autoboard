@@ -58,8 +58,11 @@ defmodule AutoboardWeb.EventsStream do
       conn = send_stream_headers(conn)
 
       case drain_until(conn, last_id, high_water, options) do
-        {:ok, streamed, cursor} -> receive_events(streamed, cursor, options)
-        {:error, streamed, _cursor} -> streamed
+        {:ok, streamed, cursor} ->
+          receive_events(streamed, cursor, schedule_heartbeat(options), options)
+
+        {:error, streamed, _cursor} ->
+          streamed
       end
     else
       {:error, :future_last_event_id} ->
@@ -85,18 +88,22 @@ defmodule AutoboardWeb.EventsStream do
   # make a slow/reconnecting client unable to turn a large replay into one huge
   # in-memory response.
   defp drain_until(conn, cursor, upper, options) do
-    case Activity.replay_page(context(), cursor, upper, page_size(options)) do
-      {:ok, []} ->
-        {:ok, conn, cursor}
+    if overloaded?(options) do
+      {:error, conn, cursor}
+    else
+      case Activity.replay_page(context(), cursor, upper, page_size(options)) do
+        {:ok, []} ->
+          {:ok, conn, cursor}
 
-      {:ok, events} ->
-        case send_events(conn, events, options) do
-          {:ok, streamed, latest} -> drain_until(streamed, latest, upper, options)
-          {:error, streamed, latest} -> {:error, streamed, latest}
-        end
+        {:ok, events} ->
+          case send_events(conn, events, options) do
+            {:ok, streamed, latest} -> drain_until(streamed, latest, upper, options)
+            {:error, streamed, latest} -> {:error, streamed, latest}
+          end
 
-      {:error, _reason} ->
-        {:error, conn, cursor}
+        {:error, _reason} ->
+          {:error, conn, cursor}
+      end
     end
   end
 
@@ -109,39 +116,48 @@ defmodule AutoboardWeb.EventsStream do
     end)
   end
 
-  defp receive_events(conn, cursor, options) do
-    timer = schedule_heartbeat(options)
+  defp receive_events(conn, cursor, timer, options) do
+    receive do
+      {:activity, _event} ->
+        case drain_live(conn, cursor, options) do
+          {:ok, streamed, latest} -> receive_events(streamed, latest, timer, options)
+          {:error, streamed, _latest} -> cancel_heartbeat(timer, options) && streamed
+        end
 
-    try do
-      receive do
-        {:activity, _event} ->
-          if overloaded?(options) do
-            conn
-          else
-            drain_notifications()
+      :autoboard_sse_heartbeat ->
+        case chunk(conn, ": heartbeat\n\n", options) do
+          {:ok, streamed} ->
+            cancel_heartbeat(timer, options)
+            receive_events(streamed, cursor, schedule_heartbeat(options), options)
 
-            case drain_until(conn, cursor, nil, options) do
-              {:ok, streamed, latest} -> receive_events(streamed, latest, options)
-              {:error, streamed, _latest} -> streamed
-            end
-          end
+          {:error, streamed} ->
+            cancel_heartbeat(timer, options)
+            streamed
+        end
+    end
+  end
 
-        :autoboard_sse_heartbeat ->
-          case chunk(conn, ": heartbeat\n\n", options) do
-            {:ok, streamed} -> receive_events(streamed, cursor, options)
-            {:error, streamed} -> streamed
-          end
+  defp drain_live(conn, cursor, options) do
+    with {:ok, high_water} <- Activity.high_water(context()),
+         {:ok, streamed, latest} <- drain_until(conn, cursor, high_water, options) do
+      if drain_notifications() do
+        drain_live(streamed, latest, options)
+      else
+        {:ok, streamed, latest}
       end
-    after
-      cancel_heartbeat(timer, options)
+    else
+      {:error, streamed, latest} -> {:error, streamed, latest}
+      _ -> {:error, conn, cursor}
     end
   end
 
   defp drain_notifications do
     receive do
-      {:activity, _event} -> drain_notifications()
+      {:activity, _event} ->
+        _ = drain_notifications()
+        true
     after
-      0 -> :ok
+      0 -> false
     end
   end
 

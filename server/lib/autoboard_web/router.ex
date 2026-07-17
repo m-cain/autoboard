@@ -19,7 +19,6 @@ defmodule AutoboardWeb.Router do
 
   plug(:safe_static)
   plug(:match)
-  plug(Plug.Parsers, parsers: [:json], pass: ["application/json"], json_decoder: Jason)
   plug(:dispatch)
 
   get "/api/v1/projects" do

@@ -6,6 +6,7 @@ defmodule AutoboardWeb.RouterTest do
   alias Autoboard.Attachments.Attachment
   alias Autoboard.Activity.Event
   alias Autoboard.Auth.Context
+  alias Autoboard.Auth.Token
   alias Autoboard.Comments.Comment
   alias Autoboard.Projects
   alias Autoboard.Repo
@@ -85,7 +86,9 @@ defmodule AutoboardWeb.RouterTest do
       comments: Repo.aggregate(Comment, :count),
       attachments: Repo.aggregate(Attachment, :count),
       labels: Repo.aggregate(Label, :count),
-      dependencies: Repo.aggregate(Dependency, :count)
+      dependencies: Repo.aggregate(Dependency, :count),
+      ticket_labels: table_count("ticket_labels"),
+      access_tokens: Repo.aggregate(Token, :count)
     }
 
     for method <- [:post, :put, :patch, :delete],
@@ -111,6 +114,20 @@ defmodule AutoboardWeb.RouterTest do
     assert before.attachments == Repo.aggregate(Attachment, :count)
     assert before.labels == Repo.aggregate(Label, :count)
     assert before.dependencies == Repo.aggregate(Dependency, :count)
+    assert before.ticket_labels == table_count("ticket_labels")
+    assert before.access_tokens == Repo.aggregate(Token, :count)
+  end
+
+  test "malformed JSON write bodies are still inert 404s" do
+    for method <- [:post, :put, :patch, :delete],
+        path <- ["/api/v1/projects", "/api/v1/events", "/api"] do
+      response =
+        conn(method, path, "{not json")
+        |> Plug.Conn.put_req_header("content-type", "application/json")
+        |> Router.call(@opts)
+
+      assert response.status == 404
+    end
   end
 
   test "reports health through an injectable database check" do
@@ -146,5 +163,10 @@ defmodule AutoboardWeb.RouterTest do
 
     response = Router.call(request, @opts)
     {response.status, Jason.decode!(response.resp_body)}
+  end
+
+  defp table_count(table) do
+    %{rows: [[count]]} = Ecto.Adapters.SQL.query!(Repo, "SELECT count(*) FROM #{table}")
+    count
   end
 end
