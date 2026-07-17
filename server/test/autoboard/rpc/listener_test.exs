@@ -58,6 +58,28 @@ defmodule Autoboard.RPC.ListenerTest do
     refute File.exists?(path)
   end
 
+  test "cleans post-bind supervisor and acceptor failures and permits rebinding" do
+    previous_trap_exit = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous_trap_exit) end)
+
+    for stage <- [:supervisor, :acceptor] do
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "autoboard-rpc-partial-#{stage}-#{System.unique_integer([:positive])}.sock"
+        )
+
+      assert {:error, {:injected_failure, ^stage}} =
+               Listener.start_link(path: path, fail_stage: stage)
+
+      refute File.exists?(path)
+      {:ok, listener} = Listener.start_link(path: path)
+      assert File.exists?(path)
+      :ok = GenServer.stop(listener)
+      refute File.exists?(path)
+    end
+  end
+
   defp eventually(fun, attempts \\ 20)
   defp eventually(fun, 0), do: fun.()
 

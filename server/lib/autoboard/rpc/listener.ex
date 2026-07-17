@@ -35,6 +35,7 @@ defmodule Autoboard.RPC.Listener do
   @impl true
   def terminate(_reason, state) do
     :gen_tcp.close(state.socket)
+    Process.exit(state.session_supervisor, :shutdown)
     safe_remove_socket(state.path)
     :ok
   end
@@ -70,8 +71,16 @@ defmodule Autoboard.RPC.Listener do
     with :ok <- maybe_fail(opts, :chmod),
          :ok <- File.chmod(path, 0o600),
          :ok <- maybe_fail(opts, :supervisor),
-         {:ok, session_supervisor} <- Task.Supervisor.start_link(),
-         :ok <- maybe_fail(opts, :acceptor),
+         {:ok, session_supervisor} <- Task.Supervisor.start_link() do
+      Process.unlink(session_supervisor)
+      start_acceptor(path, socket, session_supervisor, opts)
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp start_acceptor(path, socket, session_supervisor, opts) do
+    with :ok <- maybe_fail(opts, :acceptor),
          {:ok, acceptor} <-
            Task.Supervisor.start_child(session_supervisor, fn ->
              Acceptor.accept_loop(socket, session_supervisor)
@@ -85,7 +94,9 @@ defmodule Autoboard.RPC.Listener do
          acceptor_ref: Process.monitor(acceptor)
        }}
     else
-      {:error, reason} -> {:error, reason}
+      {:error, reason} ->
+        Process.exit(session_supervisor, :shutdown)
+        {:error, reason}
     end
   end
 
