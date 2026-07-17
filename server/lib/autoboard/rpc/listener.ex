@@ -11,6 +11,8 @@ defmodule Autoboard.RPC.Listener do
 
   @impl true
   def init(opts) do
+    Process.flag(:trap_exit, true)
+    parent = self() |> Process.info(:links) |> elem(1) |> List.first()
     path = Keyword.get(opts, :path, Application.fetch_env!(:autoboard, :socket_path))
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
@@ -20,7 +22,7 @@ defmodule Autoboard.RPC.Listener do
          {:ok, identity} <- socket_identity(path),
          :ok <- write_owner(owner, identity),
          {:ok, state} <- start_bound_listener(path, socket, identity, owner, opts) do
-      {:ok, state}
+      {:ok, Map.put(state, :parent, parent)}
     else
       {:error, reason} -> {:stop, reason}
     end
@@ -53,6 +55,12 @@ defmodule Autoboard.RPC.Listener do
         {:stop, :acceptor_unavailable, state}
     end
   end
+
+  @impl true
+  def handle_info({:EXIT, parent, reason}, %{parent: parent} = state),
+    do: {:stop, reason, state}
+
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
 
   defp start_bound_listener(path, socket, identity, owner, opts) do
     with :ok <- maybe_fail(opts, :chmod),

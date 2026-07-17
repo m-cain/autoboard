@@ -8,7 +8,10 @@ defmodule Autoboard.RPC.SessionTest do
 
   setup do
     path =
-      Path.join(System.tmp_dir!(), "autoboard-rpc-#{System.unique_integer([:positive])}.sock")
+      Path.join(
+        System.tmp_dir!(),
+        "autoboard-rpc-#{Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)}.sock"
+      )
 
     on_exit(fn -> remove_owned_socket(path) end)
 

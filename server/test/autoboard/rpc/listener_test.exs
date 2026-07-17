@@ -7,7 +7,7 @@ defmodule Autoboard.RPC.ListenerTest do
     path =
       Path.join(
         System.tmp_dir!(),
-        "autoboard-rpc-file-#{System.unique_integer([:positive])}.sock"
+        "autoboard-rpc-file-#{Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)}.sock"
       )
 
     :ok = File.write(path, "must survive")
@@ -30,7 +30,7 @@ defmodule Autoboard.RPC.ListenerTest do
     path =
       Path.join(
         System.tmp_dir!(),
-        "autoboard-rpc-restart-#{System.unique_integer([:positive])}.sock"
+        "autoboard-rpc-restart-#{Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)}.sock"
       )
 
     {:ok, listener} = start_supervised({Listener, path: path})
@@ -42,11 +42,28 @@ defmodule Autoboard.RPC.ListenerTest do
     :ok = :gen_tcp.close(socket)
   end
 
+  test "removes its owned endpoint when its supervisor shuts down" do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "autoboard-rpc-supervisor-stop-#{Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)}.sock"
+      )
+
+    {:ok, supervisor} = Supervisor.start_link([{Listener, path: path}], strategy: :one_for_one)
+    on_exit(fn -> if Process.alive?(supervisor), do: Supervisor.stop(supervisor) end)
+
+    assert File.exists?(path)
+    assert File.exists?(path <> ".owner")
+    assert :ok = Supervisor.stop(supervisor)
+    refute File.exists?(path)
+    refute File.exists?(path <> ".owner")
+  end
+
   test "never unlinks a live listener or a replacement endpoint" do
     path =
       Path.join(
         System.tmp_dir!(),
-        "autoboard-rpc-owner-#{System.unique_integer([:positive])}.sock"
+        "autoboard-rpc-owner-#{Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)}.sock"
       )
 
     previous_trap_exit = Process.flag(:trap_exit, true)
@@ -67,7 +84,7 @@ defmodule Autoboard.RPC.ListenerTest do
     path =
       Path.join(
         System.tmp_dir!(),
-        "autoboard-rpc-stale-#{System.unique_integer([:positive])}.sock"
+        "autoboard-rpc-stale-#{Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)}.sock"
       )
 
     {:ok, stale} = :gen_tcp.listen(0, [:binary, ifaddr: {:local, String.to_charlist(path)}])
@@ -104,7 +121,7 @@ defmodule Autoboard.RPC.ListenerTest do
     path =
       Path.join(
         System.tmp_dir!(),
-        "autoboard-rpc-partial-#{System.unique_integer([:positive])}.sock"
+        "autoboard-rpc-partial-#{Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)}.sock"
       )
 
     previous_trap_exit = Process.flag(:trap_exit, true)
@@ -124,7 +141,7 @@ defmodule Autoboard.RPC.ListenerTest do
       path =
         Path.join(
           System.tmp_dir!(),
-          "autoboard-rpc-partial-#{stage}-#{System.unique_integer([:positive])}.sock"
+          "autoboard-rpc-partial-#{stage}-#{Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)}.sock"
         )
 
       assert {:error, {:injected_failure, ^stage}} =
