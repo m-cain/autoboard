@@ -34,6 +34,11 @@ defmodule Autoboard.ContractSchemaTest do
 
     assert {:error, _} =
              Xema.validate(xema, %{project | "inserted_at" => "2026-07-16T12:34:56.1234567Z"})
+
+    assert :ok = Xema.validate(xema, %{project | "inserted_at" => "0001-02-28T00:00:00Z"})
+    assert :ok = Xema.validate(xema, %{project | "inserted_at" => "0099-02-28T00:00:00Z"})
+    assert :ok = Xema.validate(xema, %{project | "inserted_at" => "0004-02-29T00:00:00Z"})
+    assert {:error, _} = Xema.validate(xema, %{project | "inserted_at" => "0001-02-29T00:00:00Z"})
   end
 
   test "generated RPC envelope schema accepts the Task 7 domain, protocol, and internal shapes" do

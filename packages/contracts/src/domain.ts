@@ -28,9 +28,10 @@ const isUtcTimestamp = (value: string): boolean => {
   const match = utcTimestampPattern.exec(value)
   if (!match) return false
   const [year, month, day, hour, minute, second] = match.slice(1).map(Number)
-  if (hour > 23 || minute > 59 || second > 59) return false
-  const date = new Date(Date.UTC(year!, month! - 1, day!))
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day
+  if (hour > 23 || minute > 59 || second > 59 || month! < 1 || month! > 12) return false
+  const leap = year! % 4 === 0 && (year! % 100 !== 0 || year! % 400 === 0)
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day! >= 1 && day! <= days[month! - 1]!
 }
 export const Timestamp = pipe(Schema.String, Schema.filter(isUtcTimestamp)).annotations({
   jsonSchema: { format: "date-time", pattern: utcTimestampJsonPattern },

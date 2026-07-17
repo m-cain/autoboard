@@ -62,6 +62,10 @@ describe("Autoboard transport contracts", () => {
       ...board,
       project: { ...board.project, inserted_at: "2026-07-16T12:34:56.123456Z" },
     })).toBeTruthy()
+    for (const inserted_at of ["0001-02-28T00:00:00Z", "0099-02-28T00:00:00Z", "0004-02-29T00:00:00Z"]) {
+      expect(Schema.decodeUnknownSync(ProjectBoard)({ ...board, project: { ...board.project, inserted_at } })).toBeTruthy()
+    }
+    expect(() => Schema.decodeUnknownSync(ProjectBoard)({ ...board, project: { ...board.project, inserted_at: "0001-02-29T00:00:00Z" } })).toThrow()
 
     expect(() => Schema.decodeUnknownSync(RpcSuccess)({
       jsonrpc: "2.0",
@@ -98,6 +102,13 @@ describe("Autoboard transport contracts", () => {
       expect(Schema.decodeUnknownSync(RpcEnvelopeFailure)(envelope)).toBeTruthy()
     }
     expect(() => Schema.decodeUnknownSync(RpcEnvelopeFailure)({ ...domain, extra: true })).toThrow()
+    for (const invalid of [
+      { ...domain, error: { ...domain.error, code: 123 } },
+      { ...protocol, error: { ...protocol.error, code: -32601 } },
+      { ...protocol, error: { ...protocol.error, code: -32602 } },
+      { ...protocol, error: { ...protocol.error, code: -32010 } },
+      { ...internal, error: { ...internal.error, data: { kind: "internal_error", message: "oops", fields: {} } } },
+    ]) expect(() => Schema.decodeUnknownSync(RpcEnvelopeFailure)(invalid)).toThrow()
   })
 
   test("keeps HTTP attachments exact and storage-path free", async () => {
