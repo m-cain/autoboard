@@ -17,25 +17,16 @@ defmodule Autoboard.RPC.Listener do
   def init(opts) do
     path = Keyword.get(opts, :path, Application.fetch_env!(:autoboard, :socket_path))
 
-    with :ok <- prepare_socket_path(path),
-         {:ok, socket} <- listen(path),
-         :ok <- File.chmod(path, 0o600),
-         {:ok, session_supervisor} <- Task.Supervisor.start_link() do
-      {:ok, acceptor} =
-        Task.Supervisor.start_child(session_supervisor, fn ->
-          Acceptor.accept_loop(socket, session_supervisor)
-        end)
+    with :ok <- prepare_socket_path(path), {:ok, socket} <- listen(path) do
+      case start_bound_listener(path, socket, opts) do
+        {:ok, state} ->
+          {:ok, state}
 
-      acceptor_ref = Process.monitor(acceptor)
-
-      {:ok,
-       %{
-         path: path,
-         socket: socket,
-         session_supervisor: session_supervisor,
-         acceptor: acceptor,
-         acceptor_ref: acceptor_ref
-       }}
+        {:error, reason} ->
+          :gen_tcp.close(socket)
+          safe_remove_socket(path)
+          {:stop, reason}
+      end
     else
       {:error, reason} -> {:stop, reason}
     end
@@ -73,6 +64,35 @@ defmodule Autoboard.RPC.Listener do
         ifaddr: {:local, String.to_charlist(path)}
       ]
     )
+  end
+
+  defp start_bound_listener(path, socket, opts) do
+    with :ok <- maybe_fail(opts, :chmod),
+         :ok <- File.chmod(path, 0o600),
+         :ok <- maybe_fail(opts, :supervisor),
+         {:ok, session_supervisor} <- Task.Supervisor.start_link(),
+         :ok <- maybe_fail(opts, :acceptor),
+         {:ok, acceptor} <-
+           Task.Supervisor.start_child(session_supervisor, fn ->
+             Acceptor.accept_loop(socket, session_supervisor)
+           end) do
+      {:ok,
+       %{
+         path: path,
+         socket: socket,
+         session_supervisor: session_supervisor,
+         acceptor: acceptor,
+         acceptor_ref: Process.monitor(acceptor)
+       }}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp maybe_fail(opts, stage) do
+    if Keyword.get(opts, :fail_stage) == stage,
+      do: {:error, {:injected_failure, stage}},
+      else: :ok
   end
 
   defp prepare_socket_path(path) do

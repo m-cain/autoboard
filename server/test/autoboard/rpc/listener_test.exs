@@ -42,6 +42,22 @@ defmodule Autoboard.RPC.ListenerTest do
     :ok = :gen_tcp.close(socket)
   end
 
+  test "cleans a socket bound before an injected chmod failure" do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "autoboard-rpc-partial-#{System.unique_integer([:positive])}.sock"
+      )
+
+    previous_trap_exit = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous_trap_exit) end)
+
+    assert {:error, {:injected_failure, :chmod}} =
+             Listener.start_link(path: path, fail_stage: :chmod)
+
+    refute File.exists?(path)
+  end
+
   defp eventually(fun, attempts \\ 20)
   defp eventually(fun, 0), do: fun.()
 
