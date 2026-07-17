@@ -1,0 +1,685 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "NonEmptyString": {
+      "type": "string",
+      "description": "a non empty string",
+      "title": "nonEmptyString",
+      "minLength": 1
+    }
+  },
+  "type": "object",
+  "required": [
+    "project",
+    "columns"
+  ],
+  "properties": {
+    "project": {
+      "type": "object",
+      "required": [
+        "id",
+        "key",
+        "name",
+        "description",
+        "state",
+        "revision",
+        "inserted_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "a Universally Unique Identifier",
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "key": {
+          "$ref": "#/definitions/NonEmptyString"
+        },
+        "name": {
+          "$ref": "#/definitions/NonEmptyString"
+        },
+        "description": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "archived"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "description": "a positive number",
+          "title": "positive",
+          "exclusiveMinimum": 0
+        },
+        "inserted_at": {
+          "type": "string",
+          "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+        },
+        "updated_at": {
+          "type": "string",
+          "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "columns": {
+      "type": "object",
+      "required": [
+        "backlog",
+        "ready",
+        "in_progress",
+        "done"
+      ],
+      "properties": {
+        "backlog": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "identifier",
+              "project_id",
+              "title",
+              "description",
+              "status",
+              "priority",
+              "assignee",
+              "revision",
+              "parent_ticket_id",
+              "labels",
+              "blocked",
+              "comment_count",
+              "attachment_count",
+              "inserted_at",
+              "updated_at"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "a Universally Unique Identifier",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "identifier": {
+                "$ref": "#/definitions/NonEmptyString"
+              },
+              "project_id": {
+                "type": "string",
+                "description": "a Universally Unique Identifier",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "title": {
+                "$ref": "#/definitions/NonEmptyString"
+              },
+              "description": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "triage",
+                  "backlog",
+                  "ready",
+                  "in_progress",
+                  "done",
+                  "canceled"
+                ]
+              },
+              "priority": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ]
+              },
+              "assignee": {
+                "type": "string",
+                "enum": [
+                  "unassigned",
+                  "me",
+                  "codex"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "description": "a positive number",
+                "title": "positive",
+                "exclusiveMinimum": 0
+              },
+              "parent_ticket_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "description": "a Universally Unique Identifier",
+                    "format": "uuid",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name",
+                    "project_id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "a Universally Unique Identifier",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    },
+                    "name": {
+                      "$ref": "#/definitions/NonEmptyString"
+                    },
+                    "project_id": {
+                      "type": "string",
+                      "description": "a Universally Unique Identifier",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "blocked": {
+                "type": "boolean"
+              },
+              "comment_count": {
+                "type": "integer",
+                "description": "a non-negative number",
+                "title": "nonNegative",
+                "minimum": 0
+              },
+              "attachment_count": {
+                "type": "integer",
+                "description": "a non-negative number",
+                "title": "nonNegative",
+                "minimum": 0
+              },
+              "inserted_at": {
+                "type": "string",
+                "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+              },
+              "updated_at": {
+                "type": "string",
+                "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "ready": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "identifier",
+              "project_id",
+              "title",
+              "description",
+              "status",
+              "priority",
+              "assignee",
+              "revision",
+              "parent_ticket_id",
+              "labels",
+              "blocked",
+              "comment_count",
+              "attachment_count",
+              "inserted_at",
+              "updated_at"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "a Universally Unique Identifier",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "identifier": {
+                "$ref": "#/definitions/NonEmptyString"
+              },
+              "project_id": {
+                "type": "string",
+                "description": "a Universally Unique Identifier",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "title": {
+                "$ref": "#/definitions/NonEmptyString"
+              },
+              "description": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "triage",
+                  "backlog",
+                  "ready",
+                  "in_progress",
+                  "done",
+                  "canceled"
+                ]
+              },
+              "priority": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ]
+              },
+              "assignee": {
+                "type": "string",
+                "enum": [
+                  "unassigned",
+                  "me",
+                  "codex"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "description": "a positive number",
+                "title": "positive",
+                "exclusiveMinimum": 0
+              },
+              "parent_ticket_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "description": "a Universally Unique Identifier",
+                    "format": "uuid",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name",
+                    "project_id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "a Universally Unique Identifier",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    },
+                    "name": {
+                      "$ref": "#/definitions/NonEmptyString"
+                    },
+                    "project_id": {
+                      "type": "string",
+                      "description": "a Universally Unique Identifier",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "blocked": {
+                "type": "boolean"
+              },
+              "comment_count": {
+                "type": "integer",
+                "description": "a non-negative number",
+                "title": "nonNegative",
+                "minimum": 0
+              },
+              "attachment_count": {
+                "type": "integer",
+                "description": "a non-negative number",
+                "title": "nonNegative",
+                "minimum": 0
+              },
+              "inserted_at": {
+                "type": "string",
+                "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+              },
+              "updated_at": {
+                "type": "string",
+                "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "in_progress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "identifier",
+              "project_id",
+              "title",
+              "description",
+              "status",
+              "priority",
+              "assignee",
+              "revision",
+              "parent_ticket_id",
+              "labels",
+              "blocked",
+              "comment_count",
+              "attachment_count",
+              "inserted_at",
+              "updated_at"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "a Universally Unique Identifier",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "identifier": {
+                "$ref": "#/definitions/NonEmptyString"
+              },
+              "project_id": {
+                "type": "string",
+                "description": "a Universally Unique Identifier",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "title": {
+                "$ref": "#/definitions/NonEmptyString"
+              },
+              "description": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "triage",
+                  "backlog",
+                  "ready",
+                  "in_progress",
+                  "done",
+                  "canceled"
+                ]
+              },
+              "priority": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ]
+              },
+              "assignee": {
+                "type": "string",
+                "enum": [
+                  "unassigned",
+                  "me",
+                  "codex"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "description": "a positive number",
+                "title": "positive",
+                "exclusiveMinimum": 0
+              },
+              "parent_ticket_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "description": "a Universally Unique Identifier",
+                    "format": "uuid",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name",
+                    "project_id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "a Universally Unique Identifier",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    },
+                    "name": {
+                      "$ref": "#/definitions/NonEmptyString"
+                    },
+                    "project_id": {
+                      "type": "string",
+                      "description": "a Universally Unique Identifier",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "blocked": {
+                "type": "boolean"
+              },
+              "comment_count": {
+                "type": "integer",
+                "description": "a non-negative number",
+                "title": "nonNegative",
+                "minimum": 0
+              },
+              "attachment_count": {
+                "type": "integer",
+                "description": "a non-negative number",
+                "title": "nonNegative",
+                "minimum": 0
+              },
+              "inserted_at": {
+                "type": "string",
+                "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+              },
+              "updated_at": {
+                "type": "string",
+                "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "done": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "identifier",
+              "project_id",
+              "title",
+              "description",
+              "status",
+              "priority",
+              "assignee",
+              "revision",
+              "parent_ticket_id",
+              "labels",
+              "blocked",
+              "comment_count",
+              "attachment_count",
+              "inserted_at",
+              "updated_at"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "a Universally Unique Identifier",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "identifier": {
+                "$ref": "#/definitions/NonEmptyString"
+              },
+              "project_id": {
+                "type": "string",
+                "description": "a Universally Unique Identifier",
+                "format": "uuid",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "title": {
+                "$ref": "#/definitions/NonEmptyString"
+              },
+              "description": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "triage",
+                  "backlog",
+                  "ready",
+                  "in_progress",
+                  "done",
+                  "canceled"
+                ]
+              },
+              "priority": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ]
+              },
+              "assignee": {
+                "type": "string",
+                "enum": [
+                  "unassigned",
+                  "me",
+                  "codex"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "description": "a positive number",
+                "title": "positive",
+                "exclusiveMinimum": 0
+              },
+              "parent_ticket_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "description": "a Universally Unique Identifier",
+                    "format": "uuid",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "name",
+                    "project_id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "a Universally Unique Identifier",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    },
+                    "name": {
+                      "$ref": "#/definitions/NonEmptyString"
+                    },
+                    "project_id": {
+                      "type": "string",
+                      "description": "a Universally Unique Identifier",
+                      "format": "uuid",
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "blocked": {
+                "type": "boolean"
+              },
+              "comment_count": {
+                "type": "integer",
+                "description": "a non-negative number",
+                "title": "nonNegative",
+                "minimum": 0
+              },
+              "attachment_count": {
+                "type": "integer",
+                "description": "a non-negative number",
+                "title": "nonNegative",
+                "minimum": 0
+              },
+              "inserted_at": {
+                "type": "string",
+                "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+              },
+              "updated_at": {
+                "type": "string",
+                "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

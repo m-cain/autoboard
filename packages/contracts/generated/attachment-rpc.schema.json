@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "NonEmptyString": {
+      "type": "string",
+      "description": "a non empty string",
+      "title": "nonEmptyString",
+      "minLength": 1
+    }
+  },
+  "type": "object",
+  "required": [
+    "id",
+    "ticket_id",
+    "project_id",
+    "original_filename",
+    "media_type",
+    "byte_size",
+    "sha256",
+    "actor",
+    "inserted_at",
+    "managed_path"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "a Universally Unique Identifier",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "ticket_id": {
+      "type": "string",
+      "description": "a Universally Unique Identifier",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "project_id": {
+      "type": "string",
+      "description": "a Universally Unique Identifier",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "original_filename": {
+      "$ref": "#/definitions/NonEmptyString"
+    },
+    "media_type": {
+      "$ref": "#/definitions/NonEmptyString"
+    },
+    "byte_size": {
+      "type": "integer",
+      "description": "a non-negative number",
+      "title": "nonNegative",
+      "minimum": 0
+    },
+    "sha256": {
+      "type": "string",
+      "description": "a string matching the pattern ^[a-f0-9]{64}$",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "actor": {
+      "type": "string",
+      "enum": [
+        "me",
+        "codex",
+        "system"
+      ]
+    },
+    "inserted_at": {
+      "type": "string",
+      "description": "a string matching the pattern ^\\d{4}-\\d{2}-\\d{2}T.*Z$",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T.*Z$"
+    },
+    "managed_path": {
+      "$ref": "#/definitions/NonEmptyString"
+    }
+  },
+  "additionalProperties": false
+}

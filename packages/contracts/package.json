@@ -9,9 +9,12 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "generate": "tsc -b && node dist/generate-json-schema.js"
   },
   "devDependencies": {
+    "@types/node": "^24.10.0",
+    "effect": "^3.22.0",
     "typescript": "^7.0.0",
     "vitest": "^4.1.0"
   }
