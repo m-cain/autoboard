@@ -1,0 +1,21 @@
+{
+  "name": "@autoboard/mcp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@autoboard/contracts": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "effect": "^3.22.0",
+    "zod": "^4.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.0",
+    "vitest": "^4.1.0"
+  }
+}

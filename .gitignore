@@ -1,2 +1,9 @@
 .superpowers/
 .worktrees/
+.env
+node_modules/
+dist/
+coverage/
+server/var/
+server/priv/static/
+*.sock
