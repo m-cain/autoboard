@@ -5,6 +5,11 @@ defmodule Autoboard.RPC.Listener do
   @max_frame_bytes 4_194_304
   @socket_file_type 0o140000
   @file_type_mask 0o170000
+  @marker_mode 0o600
+  @claim_mode 0o700
+  @marker_version 1
+  @max_marker_bytes 1024
+  @max_identity_value 9_223_372_036_854_775_807
 
   def start_link(opts \\ []),
     do: GenServer.start_link(__MODULE__, opts, Keyword.take(opts, [:name]))
@@ -15,14 +20,15 @@ defmodule Autoboard.RPC.Listener do
     parent = self() |> Process.info(:links) |> elem(1) |> List.first()
     path = Keyword.get(opts, :path, Application.fetch_env!(:autoboard, :socket_path))
 
-    with :ok <- File.mkdir_p(Path.dirname(path)),
-         {:ok, owner} <- acquire_owner(path),
-         :ok <- prepare_socket_path(path, owner),
-         {:ok, socket} <- listen(path),
-         {:ok, identity} <- socket_identity(path),
-         :ok <- write_owner(owner, identity),
-         {:ok, state} <- start_bound_listener(path, socket, identity, owner, opts) do
-      {:ok, Map.put(state, :parent, parent)}
+    with :ok <- File.mkdir_p(Path.dirname(path)), {:ok, owner} <- acquire_owner(path) do
+      case bind_listener(path, owner, opts) do
+        {:ok, state} ->
+          {:ok, Map.put(state, :parent, parent)}
+
+        {:error, reason} ->
+          cleanup_owner(path, owner)
+          {:stop, reason}
+      end
     else
       {:error, reason} -> {:stop, reason}
     end
@@ -33,12 +39,7 @@ defmodule Autoboard.RPC.Listener do
     :gen_tcp.close(state.socket)
     Process.exit(state.session_supervisor, :shutdown)
 
-    if owns?(state.owner, state.identity),
-      do:
-        (
-          safe_remove_socket(state.path, state.identity)
-          File.rm(state.owner.marker)
-        )
+    cleanup_owner(state.path, state.owner, state.identity)
 
     :ok
   end
@@ -97,59 +98,61 @@ defmodule Autoboard.RPC.Listener do
 
   defp cleanup_failed(path, socket, identity, owner) do
     :gen_tcp.close(socket)
-
-    if owns?(owner, identity),
-      do:
-        (
-          safe_remove_socket(path, identity)
-          File.rm(owner.marker)
-        )
+    cleanup_owner(path, owner, identity)
   end
 
-  defp acquire_owner(path), do: acquire_owner(path, 2)
-  defp acquire_owner(_path, 0), do: {:error, :socket_ownership_contended}
+  defp bind_listener(path, owner, opts) do
+    with :ok <- prepare_socket_path(path, owner),
+         :ok <- maybe_fail(opts, :listen),
+         {:ok, socket} <- listen(path) do
+      bind_socket(path, socket, owner, opts)
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
-  defp acquire_owner(path, attempts) do
-    marker = path <> ".owner"
-    nonce = Ecto.UUID.generate()
-    record = %{"pid" => os_pid(), "nonce" => nonce, "identity" => nil}
-
-    case File.open(marker, [:write, :exclusive]) do
-      {:ok, io} ->
-        :ok = IO.binwrite(io, Jason.encode!(record))
-        :ok = File.close(io)
-        :ok = File.chmod(marker, 0o600)
-        {:ok, %{marker: marker, nonce: nonce}}
-
-      {:error, :eexist} ->
-        reclaim_or_reject(path, marker, attempts)
+  defp bind_socket(path, socket, owner, opts) do
+    case socket_identity(path) do
+      {:ok, identity} ->
+        with :ok <- maybe_fail(opts, :identity),
+             :ok <- maybe_fail(opts, :owner_write),
+             {:ok, owner} <- write_owner(owner, identity),
+             {:ok, state} <- start_bound_listener(path, socket, identity, owner, opts) do
+          {:ok, state}
+        else
+          {:error, reason} ->
+            cleanup_failed(path, socket, identity, owner)
+            {:error, reason}
+        end
 
       {:error, reason} ->
+        :gen_tcp.close(socket)
+        cleanup_owner(path, owner)
         {:error, reason}
     end
   end
 
-  defp reclaim_or_reject(path, marker, attempts) do
-    with {:ok, json} <- File.read(marker),
-         {:ok, record} <- Jason.decode(json),
-         false <- pid_alive?(record["pid"]) do
-      tomb = marker <> ".stale-" <> Ecto.UUID.generate()
+  defp acquire_owner(path) do
+    marker = path <> ".owner"
 
-      case File.rename(marker, tomb) do
-        :ok ->
-          result = reclaim_recorded_socket(path, record)
-          File.rm(tomb)
-
-          case result do
-            :ok -> acquire_owner(path, attempts - 1)
-            {:error, _} = error -> error
-          end
-
-        {:error, _} ->
-          acquire_owner(path, attempts - 1)
+    with_claim(marker, fn ->
+      case File.lstat(marker) do
+        {:error, :enoent} -> install_provisional_owner(marker)
+        {:ok, _} -> reclaim_or_reject(path, marker)
+        {:error, reason} -> {:error, reason}
       end
+    end)
+  end
+
+  defp reclaim_or_reject(path, marker) do
+    with {:ok, record} <- read_marker(marker),
+         false <- pid_alive?(record["pid"]),
+         :ok <- reclaim_recorded_socket(path, record),
+         {:ok, owner} <- install_provisional_owner(marker) do
+      {:ok, owner}
     else
       true -> {:error, :socket_in_use}
+      {:error, _} = error -> error
       _ -> {:error, :ambiguous_socket_ownership}
     end
   end
@@ -182,24 +185,145 @@ defmodule Autoboard.RPC.Listener do
     end
   end
 
-  defp write_owner(owner, identity),
-    do:
-      File.write(
-        owner.marker,
-        Jason.encode!(%{
-          "pid" => os_pid(),
-          "nonce" => owner.nonce,
-          "identity" => Tuple.to_list(identity)
-        })
-      )
+  defp install_provisional_owner(marker) do
+    owner = %{
+      marker: marker,
+      claim: marker <> ".claim",
+      nonce: Ecto.UUID.generate(),
+      identity: nil
+    }
 
-  defp owns?(owner, identity) do
-    with {:ok, json} <- File.read(owner.marker), {:ok, record} <- Jason.decode(json) do
-      record["nonce"] == owner.nonce and record["identity"] == Tuple.to_list(identity)
-    else
-      _ -> false
+    case atomic_write_marker(marker, marker_record(owner)) do
+      :ok -> {:ok, owner}
+      {:error, reason} -> {:error, reason}
     end
   end
+
+  defp write_owner(owner, identity) do
+    with_claim(owner.marker, fn ->
+      with {:ok, record} <- read_marker(owner.marker),
+           true <- matching_owner?(record, owner),
+           :ok <- atomic_write_marker(owner.marker, marker_record(%{owner | identity: identity})) do
+        {:ok, %{owner | identity: identity}}
+      else
+        false -> {:error, :socket_ownership_lost}
+        {:error, _} = error -> error
+      end
+    end)
+  end
+
+  defp cleanup_owner(path, owner, socket_identity \\ nil) do
+    _ =
+      with_claim(owner.marker, fn ->
+        with {:ok, record} <- read_marker(owner.marker), true <- matching_owner?(record, owner) do
+          if socket_identity, do: safe_remove_socket(path, socket_identity)
+          File.rm(owner.marker)
+        else
+          _ -> :ok
+        end
+      end)
+
+    :ok
+  end
+
+  defp with_claim(marker, fun, attempts \\ 4)
+
+  defp with_claim(marker, fun, attempts) do
+    claim = marker <> ".claim"
+
+    case File.mkdir(claim) do
+      :ok ->
+        try do
+          case File.chmod(claim, @claim_mode) do
+            :ok -> fun.()
+            {:error, reason} -> {:error, reason}
+          end
+        after
+          File.rmdir(claim)
+        end
+
+      {:error, :eexist} when attempts > 0 ->
+        Process.sleep(5)
+        with_claim(marker, fun, attempts - 1)
+
+      {:error, :eexist} ->
+        {:error, :socket_ownership_contended}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp atomic_write_marker(marker, record) do
+    temp = marker <> ".tmp-" <> Ecto.UUID.generate()
+    payload = Jason.encode!(record)
+
+    result =
+      with {:ok, io} <- File.open(temp, [:write, :exclusive, :binary]),
+           :ok <- IO.binwrite(io, payload),
+           :ok <- File.close(io),
+           :ok <- File.chmod(temp, @marker_mode),
+           :ok <- File.rename(temp, marker) do
+        :ok
+      end
+
+    if result != :ok, do: File.rm(temp)
+    result
+  end
+
+  defp read_marker(marker) do
+    with {:ok, stat} <- File.lstat(marker),
+         true <- trusted_marker_stat?(stat),
+         {:ok, json} <- File.read(marker),
+         {:ok, record} <- Jason.decode(json),
+         true <- valid_marker_record?(record) do
+      {:ok, record}
+    else
+      _ -> {:error, :ambiguous_socket_ownership}
+    end
+  end
+
+  defp marker_record(owner),
+    do: %{
+      "version" => @marker_version,
+      "pid" => os_pid(),
+      "nonce" => owner.nonce,
+      "identity" => if(owner.identity, do: Tuple.to_list(owner.identity), else: nil)
+    }
+
+  defp matching_owner?(record, owner),
+    do: record["nonce"] == owner.nonce and record["identity"] == owner_identity(owner)
+
+  defp owner_identity(%{identity: nil}), do: nil
+  defp owner_identity(%{identity: identity}), do: Tuple.to_list(identity)
+
+  defp trusted_marker_stat?(%{type: :regular, uid: uid, mode: mode, size: size}),
+    do:
+      uid == current_uid() and Bitwise.band(mode, 0o777) == @marker_mode and
+        size <= @max_marker_bytes
+
+  defp trusted_marker_stat?(_), do: false
+
+  defp valid_marker_record?(record) when is_map(record) do
+    MapSet.new(Map.keys(record)) == MapSet.new(["version", "pid", "nonce", "identity"]) and
+      record["version"] == @marker_version and valid_pid?(record["pid"]) and
+      valid_nonce?(record["nonce"]) and
+      valid_identity?(record["identity"])
+  end
+
+  defp valid_marker_record?(_), do: false
+  defp valid_pid?(pid) when is_binary(pid), do: String.match?(pid, ~r/^[1-9][0-9]{0,9}$/)
+  defp valid_pid?(_), do: false
+  defp valid_nonce?(nonce) when is_binary(nonce), do: match?({:ok, _}, Ecto.UUID.cast(nonce))
+  defp valid_nonce?(_), do: false
+  defp valid_identity?(nil), do: true
+
+  defp valid_identity?([a, b, c, @socket_file_type, uid]) do
+    Enum.all?([a, b, c, uid], &(is_integer(&1) and &1 >= 0 and &1 <= @max_identity_value)) and
+      uid == current_uid()
+  end
+
+  defp valid_identity?(_), do: false
 
   defp safe_remove_socket(path, expected) do
     case File.lstat(path) do
