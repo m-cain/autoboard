@@ -27,7 +27,7 @@ defmodule Autoboard.Auth.Token do
 
     %__MODULE__{}
     |> changeset(%{actor: actor, digest: digest})
-    |> Repo.insert()
+    |> Repo.insert(log: false)
     |> case do
       {:ok, token} -> {:ok, plaintext, token}
       {:error, changeset} -> {:error, validation_error(changeset)}
