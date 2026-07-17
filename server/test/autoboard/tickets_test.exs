@@ -185,6 +185,28 @@ defmodule Autoboard.TicketsTest do
     assert event_count(project.id) == 2
   end
 
+  test "update rejects status mixed with mutable fields atomically for atom and string keys", %{
+    ctx: ctx
+  } do
+    project = project_fixture(ctx, "AUTO")
+    ticket = ticket_fixture(ctx, project, %{labels: ["Backend"]})
+
+    for attrs <- [
+          %{title: "Renamed", status: :done},
+          %{"title" => "Renamed", "status" => "done"}
+        ] do
+      assert {:error, %Error{kind: :validation_failed, fields: %{base: [_ | _]}}} =
+               Tickets.update(ctx, ticket.id, ticket.revision, attrs)
+    end
+
+    assert {:ok, unchanged} = Tickets.fetch(ctx, ticket.id)
+    assert unchanged.title == ticket.title
+    assert unchanged.status == ticket.status
+    assert unchanged.revision == ticket.revision
+    assert Enum.map(unchanged.labels, & &1.name) == ["Backend"]
+    assert event_count(project.id) == 2
+  end
+
   test "public ticket boundary validates authorization ids revisions attrs and text before mutation",
        %{
          ctx: ctx

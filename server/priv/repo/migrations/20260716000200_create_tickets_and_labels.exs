@@ -55,7 +55,7 @@ defmodule Autoboard.Repo.Migrations.CreateTicketsAndLabels do
     execute("""
     ALTER TABLE activity_events
     ADD CONSTRAINT activity_events_ticket_id_fkey
-    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT
+    FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE NO ACTION
     """)
   end
 

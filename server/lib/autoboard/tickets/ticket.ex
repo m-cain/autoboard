@@ -43,7 +43,16 @@ defmodule Autoboard.Tickets.Ticket do
     ticket
     |> cast(attrs, [:title, :description, :status, :priority, :assignee])
     |> add_attribute_errors(attribute_errors)
-    |> reject_unsupported_fields(attrs, ["project_id", "parent_ticket_id", "labels"])
+    |> reject_unsupported_fields(attrs, [
+      "title",
+      "description",
+      "status",
+      "priority",
+      "assignee",
+      "project_id",
+      "parent_ticket_id",
+      "labels"
+    ])
     |> validate_text_types(attrs, [:title, :description])
     |> validate_required([:title])
     |> validate_title()
@@ -55,7 +64,7 @@ defmodule Autoboard.Tickets.Ticket do
     ticket
     |> cast(attrs, [:title, :description, :priority, :assignee])
     |> add_attribute_errors(attribute_errors)
-    |> reject_unsupported_fields(attrs, ["labels"])
+    |> reject_unsupported_fields(attrs, ["title", "description", "priority", "assignee", "labels"])
     |> validate_text_types(attrs, [:title, :description])
     |> validate_title()
   end
@@ -102,9 +111,7 @@ defmodule Autoboard.Tickets.Ticket do
     end)
   end
 
-  defp reject_unsupported_fields(changeset, attrs, additional_allowed) do
-    allowed = ["title", "description", "status", "priority", "assignee"] ++ additional_allowed
-
+  defp reject_unsupported_fields(changeset, attrs, allowed) do
     Enum.reduce(attrs, changeset, fn {field, _value}, changeset ->
       if field in allowed,
         do: changeset,
