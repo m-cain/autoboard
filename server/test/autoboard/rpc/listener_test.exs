@@ -42,6 +42,46 @@ defmodule Autoboard.RPC.ListenerTest do
     :ok = :gen_tcp.close(socket)
   end
 
+  test "never unlinks a live listener or a replacement endpoint" do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "autoboard-rpc-owner-#{System.unique_integer([:positive])}.sock"
+      )
+
+    previous_trap_exit = Process.flag(:trap_exit, true)
+    on_exit(fn -> Process.flag(:trap_exit, previous_trap_exit) end)
+
+    {:ok, first} = Listener.start_link(path: path)
+    assert {:error, :socket_in_use} = Listener.start_link(path: path)
+    assert {:ok, socket} = Autoboard.RPCClient.connect(path)
+    :ok = :gen_tcp.close(socket)
+
+    :ok = File.rm(path)
+    {:ok, replacement} = Listener.start_link(path: path)
+    :ok = GenServer.stop(first)
+    assert File.exists?(path)
+    assert {:ok, socket} = Autoboard.RPCClient.connect(path)
+    :ok = :gen_tcp.close(socket)
+    :ok = GenServer.stop(replacement)
+  end
+
+  test "replaces a proven stale current-user socket" do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "autoboard-rpc-stale-#{System.unique_integer([:positive])}.sock"
+      )
+
+    {:ok, stale} = :gen_tcp.listen(0, [:binary, ifaddr: {:local, String.to_charlist(path)}])
+    :ok = :gen_tcp.close(stale)
+    assert File.exists?(path)
+    {:ok, listener} = start_supervised({Listener, path: path})
+    assert {:ok, socket} = Autoboard.RPCClient.connect(path)
+    :ok = :gen_tcp.close(socket)
+    :ok = GenServer.stop(listener)
+  end
+
   test "cleans a socket bound before an injected chmod failure" do
     path =
       Path.join(

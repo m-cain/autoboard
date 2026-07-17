@@ -27,7 +27,19 @@ ExUnit.after_suite(fn _results ->
       {:ok, %{type: :other, mode: mode, uid: owner}}
       when Bitwise.band(mode, 0o170000) == 0o140000 and
              owner == current_uid ->
-        :ok = File.rm(path)
+        case :gen_tcp.connect(
+               {:local, String.to_charlist(path)},
+               0,
+               [:binary, active: false],
+               100
+             ) do
+          {:ok, socket} ->
+            :gen_tcp.close(socket)
+            raise("live test socket must not be removed: #{path}")
+
+          {:error, _reason} ->
+            :ok = File.rm(path)
+        end
 
       _ ->
         raise("test socket residue: #{path}")
