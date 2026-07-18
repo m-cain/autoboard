@@ -1,0 +1,4 @@
+# Project-local orchestration defaults. Codex reads this layer only because
+# `/Users/matt/Documents/autoboard` is a trusted project.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
