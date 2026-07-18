@@ -1,1 +1,62 @@
-{"columns":{"backlog":[],"done":[],"in_progress":[{"assignee":"unassigned","attachment_count":0,"blocked":false,"comment_count":0,"description":"","id":"33333333-3333-4333-8333-333333333333","identifier":"AUTO-1","inserted_at":"2026-07-16T12:34:56.123456Z","labels":[],"parent_ticket_id":null,"priority":"medium","project_id":"11111111-1111-4111-8111-111111111111","revision":1,"status":"in_progress","title":"Blocker","updated_at":"2026-07-16T12:34:56.123456Z"}],"ready":[{"assignee":"codex","attachment_count":1,"blocked":true,"comment_count":1,"description":"A transport contract","id":"44444444-4444-4444-8444-444444444444","identifier":"AUTO-2","inserted_at":"2026-07-16T12:34:56.123456Z","labels":[{"id":"22222222-2222-4222-8222-222222222222","name":"Contract","project_id":"11111111-1111-4111-8111-111111111111"}],"parent_ticket_id":"77777777-7777-4777-8777-777777777777","priority":"high","project_id":"11111111-1111-4111-8111-111111111111","revision":4,"status":"ready","title":"Representative ticket","updated_at":"2026-07-16T12:34:56.123456Z"}]},"project":{"description":"Plan","id":"11111111-1111-4111-8111-111111111111","inserted_at":"2026-07-16T12:34:56.123456Z","key":"AUTO","name":"Autoboard","revision":3,"state":"active","updated_at":"2026-07-16T12:34:56.123456Z"}}
+{
+  "columns": {
+    "backlog": [],
+    "done": [],
+    "in_progress": [
+      {
+        "assignee": "unassigned",
+        "attachment_count": 0,
+        "blocked": false,
+        "comment_count": 0,
+        "description": "",
+        "id": "33333333-3333-4333-8333-333333333333",
+        "identifier": "AUTO-1",
+        "inserted_at": "2026-07-16T12:34:56.123456Z",
+        "labels": [],
+        "parent_ticket_id": null,
+        "priority": "medium",
+        "project_id": "11111111-1111-4111-8111-111111111111",
+        "revision": 1,
+        "status": "in_progress",
+        "title": "Blocker",
+        "updated_at": "2026-07-16T12:34:56.123456Z"
+      }
+    ],
+    "ready": [
+      {
+        "assignee": "codex",
+        "attachment_count": 1,
+        "blocked": true,
+        "comment_count": 1,
+        "description": "A transport contract",
+        "id": "44444444-4444-4444-8444-444444444444",
+        "identifier": "AUTO-2",
+        "inserted_at": "2026-07-16T12:34:56.123456Z",
+        "labels": [
+          {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "name": "Contract",
+            "project_id": "11111111-1111-4111-8111-111111111111"
+          }
+        ],
+        "parent_ticket_id": "77777777-7777-4777-8777-777777777777",
+        "priority": "high",
+        "project_id": "11111111-1111-4111-8111-111111111111",
+        "revision": 4,
+        "status": "ready",
+        "title": "Representative ticket",
+        "updated_at": "2026-07-16T12:34:56.123456Z"
+      }
+    ]
+  },
+  "project": {
+    "description": "Plan",
+    "id": "11111111-1111-4111-8111-111111111111",
+    "inserted_at": "2026-07-16T12:34:56.123456Z",
+    "key": "AUTO",
+    "name": "Autoboard",
+    "revision": 3,
+    "state": "active",
+    "updated_at": "2026-07-16T12:34:56.123456Z"
+  }
+}

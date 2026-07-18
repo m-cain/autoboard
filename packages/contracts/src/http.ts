@@ -1,1 +1,7 @@
-export { Attachment, Project, ProjectBoard, TicketDetail, TicketSummary } from "./domain.js"
+export {
+  Attachment,
+  Project,
+  ProjectBoard,
+  TicketDetail,
+  TicketSummary,
+} from "./domain.js";

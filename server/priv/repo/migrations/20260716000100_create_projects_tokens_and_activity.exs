@@ -29,7 +29,10 @@ defmodule Autoboard.Repo.Migrations.CreateProjectsTokensAndActivity do
     end
 
     create unique_index(:access_tokens, [:digest])
-    create constraint(:access_tokens, :access_tokens_actor_check, check: "actor IN ('me', 'codex')")
+
+    create constraint(:access_tokens, :access_tokens_actor_check,
+             check: "actor IN ('me', 'codex')"
+           )
 
     create table(:activity_events, primary_key: false) do
       add :id, :bigserial, primary_key: true
@@ -44,7 +47,10 @@ defmodule Autoboard.Repo.Migrations.CreateProjectsTokensAndActivity do
 
     create index(:activity_events, [:project_id, :id])
     create index(:activity_events, [:ticket_id, :id])
-    create constraint(:activity_events, :activity_events_actor_check, check: "actor IN ('me', 'codex', 'system')")
+
+    create constraint(:activity_events, :activity_events_actor_check,
+             check: "actor IN ('me', 'codex', 'system')"
+           )
   end
 
   def down do

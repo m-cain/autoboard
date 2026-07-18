@@ -13,7 +13,11 @@ defmodule Autoboard.Repo.Migrations.CreateCommentsAndAttachments do
     end
 
     create index(:comments, [:ticket_id, :inserted_at])
-    create constraint(:comments, :comments_actor_check, check: "actor IN ('me', 'codex', 'system')")
+
+    create constraint(:comments, :comments_actor_check,
+             check: "actor IN ('me', 'codex', 'system')"
+           )
+
     create constraint(:comments, :comments_body_not_blank_check, check: "length(btrim(body)) > 0")
 
     create table(:attachments, primary_key: false) do
@@ -32,7 +36,11 @@ defmodule Autoboard.Repo.Migrations.CreateCommentsAndAttachments do
 
     create index(:attachments, [:ticket_id, :inserted_at])
     create unique_index(:attachments, [:managed_path])
-    create constraint(:attachments, :attachments_actor_check, check: "actor IN ('me', 'codex', 'system')")
+
+    create constraint(:attachments, :attachments_actor_check,
+             check: "actor IN ('me', 'codex', 'system')"
+           )
+
     create constraint(:attachments, :attachments_byte_size_check, check: "byte_size >= 0")
     create constraint(:attachments, :attachments_sha256_check, check: "sha256 ~ '^[0-9a-f]{64}$'")
   end

@@ -41,6 +41,7 @@
 ### Task 1: Scaffold the Monorepo and Runtime Baseline
 
 **Files:**
+
 - Create: `server/` with `mix new server --sup --module Autoboard --app autoboard`
 - Create: `package.json`
 - Create: `pnpm-workspace.yaml`
@@ -53,6 +54,7 @@
 - Test: `server/test/autoboard/application_test.exs`
 
 **Interfaces:**
+
 - Produces: a supervised `Autoboard.Repo`, root pnpm scripts, a PostgreSQL dev service, and buildable `contracts`, `mcp`, and `web` packages.
 - Produces configuration keys: `:database_url`, `:http_ip`, `:http_port`, `:socket_path`, `:data_dir`, and `:max_attachment_bytes`.
 
@@ -175,6 +177,7 @@ git commit -m "build: scaffold autoboard workspaces"
 ### Task 2: Add Authorization, Projects, Tokens, and Activity
 
 **Files:**
+
 - Create: `server/priv/repo/migrations/20260716000100_create_projects_tokens_and_activity.exs`
 - Create: `server/lib/autoboard/auth/context.ex`
 - Create: `server/lib/autoboard/auth/token.ex`
@@ -189,6 +192,7 @@ git commit -m "build: scaffold autoboard workspaces"
 - Create: `server/test/autoboard/auth/token_test.exs`
 
 **Interfaces:**
+
 - Produces: `Autoboard.Auth.Context.global/1`, accepting `:me | :codex`.
 - Produces: `Autoboard.Auth.Token.issue/1` and `authenticate/1`.
 - Produces: `Autoboard.Projects.create/2`, `update/4`, `archive/3`, `restore/3`, `list/1`, and `fetch/2`.
@@ -298,6 +302,7 @@ git commit -m "feat: add projects tokens and activity"
 ### Task 3: Implement Tickets, Labels, and One-Level Subtasks
 
 **Files:**
+
 - Create: `server/priv/repo/migrations/20260716000200_create_tickets_and_labels.exs`
 - Create: `server/lib/autoboard/tickets/ticket.ex`
 - Create: `server/lib/autoboard/tickets/label.ex`
@@ -305,6 +310,7 @@ git commit -m "feat: add projects tokens and activity"
 - Create: `server/test/autoboard/tickets_test.exs`
 
 **Interfaces:**
+
 - Produces: `Tickets.create/2`, `update/4`, `transition/4`, `fetch/2`, and `search/2`.
 - `create/2` accepts `project_id`, `title`, optional `description`, `status`, `priority`, `assignee`, `labels`, and `parent_ticket_id`.
 - `update/4` accepts only `title`, `description`, `priority`, `assignee`, and complete `labels`.
@@ -379,6 +385,7 @@ git commit -m "feat: add tickets labels and subtasks"
 ### Task 4: Add Dependencies and Actionable Work Discovery
 
 **Files:**
+
 - Create: `server/priv/repo/migrations/20260716000300_create_ticket_dependencies.exs`
 - Create: `server/lib/autoboard/tickets/dependency.ex`
 - Create: `server/lib/autoboard/tickets/graph.ex`
@@ -387,6 +394,7 @@ git commit -m "feat: add tickets labels and subtasks"
 - Create: `server/test/autoboard/actionable_tickets_test.exs`
 
 **Interfaces:**
+
 - Produces: `Tickets.add_dependency/5`, `remove_dependency/5`, `blocked?/2`, and `list_actionable/2`.
 - Dependency functions accept blocked ticket ID, blocker ticket ID, and the blocked ticket's expected revision.
 - `list_actionable/2` accepts `%{project_id: optional_uuid, limit: 1..100}`.
@@ -453,6 +461,7 @@ git commit -m "feat: add ticket dependencies and work discovery"
 ### Task 5: Add Comments, Attachments, and Post-Commit Event Broadcasting
 
 **Files:**
+
 - Create: `server/priv/repo/migrations/20260716000400_create_comments_and_attachments.exs`
 - Create: `server/lib/autoboard/comments/comment.ex`
 - Create: `server/lib/autoboard/comments.ex`
@@ -467,6 +476,7 @@ git commit -m "feat: add ticket dependencies and work discovery"
 - Create: `server/test/autoboard/activity_test.exs`
 
 **Interfaces:**
+
 - Produces: `Comments.add/3`.
 - Produces: `Attachments.add_from_path/3`, `fetch/2`, `read/2`, and `cleanup/0`.
 - Produces: `Activity.subscribe/0`, `unsubscribe/0`, `replay_after/2`, and `broadcast/1`.
@@ -517,6 +527,7 @@ git commit -m "feat: add comments attachments and event broadcasting"
 ### Task 6: Build Canonical Read Models and Transport Presenters
 
 **Files:**
+
 - Create: `server/lib/autoboard/read_model.ex`
 - Create: `server/lib/autoboard/presenter.ex`
 - Create: `server/test/autoboard/read_model_test.exs`
@@ -524,6 +535,7 @@ git commit -m "feat: add comments attachments and event broadcasting"
 - Create: `server/test/fixtures/contracts/*.json`
 
 **Interfaces:**
+
 - Produces: `ReadModel.list_projects/1`, `triage_tickets/1`, `project_board/2`, `canceled_tickets/2`, `ticket_detail/2`, `search_tickets/2`, and `actionable_tickets/2`.
 - Produces presenter maps with snake_case JSON keys shared by RPC and HTTP.
 
@@ -576,6 +588,7 @@ git commit -m "feat: add canonical autoboard read models"
 ### Task 7: Implement the Versioned Unix-Socket RPC Server
 
 **Files:**
+
 - Create: `server/lib/autoboard/rpc/listener.ex`
 - Create: `server/lib/autoboard/rpc/acceptor.ex`
 - Create: `server/lib/autoboard/rpc/session.ex`
@@ -587,6 +600,7 @@ git commit -m "feat: add canonical autoboard read models"
 - Create: `server/test/autoboard/rpc/router_test.exs`
 
 **Interfaces:**
+
 - Produces the JSON-RPC 2.0 methods listed in the design, framed with Erlang `packet: 4`.
 - `session.initialize` returns `protocol_version`, `server_version`, `actor`, and `authorization.kind`.
 - Router returns `{:ok, map}` or `{:error, %Domain.Error{}}`; only Session knows JSON-RPC envelopes.
@@ -651,6 +665,7 @@ git commit -m "feat: add unix socket rpc server"
 ### Task 8: Implement Shared Effect Contracts and the Node RPC Client
 
 **Files:**
+
 - Create: `packages/contracts/src/domain.ts`
 - Create: `packages/contracts/src/rpc.ts`
 - Create: `packages/contracts/src/http.ts`
@@ -663,6 +678,7 @@ git commit -m "feat: add unix socket rpc server"
 - Create: `server/test/autoboard/contract_schema_test.exs`
 
 **Interfaces:**
+
 - Produces Effect schemas and encoded types: `Project`, `TicketSummary`, `TicketDetail`, `ProjectBoard`, `ActivityEvent`, `Attachment`, `RpcSuccess`, and `RpcFailure`.
 - Produces `RpcClient.connect({socketPath, token})`, `call(method, params, schema, mode)`, and `close()`.
 - `mode` is `"read" | "write"`; only reads reconnect and retry once.
@@ -719,6 +735,7 @@ git commit -m "feat: add typed rpc contracts and client"
 ### Task 9: Expose the Complete MCP Tool Surface
 
 **Files:**
+
 - Create: `mcp/src/server.ts`
 - Create: `mcp/src/tool-result.ts`
 - Create: `mcp/src/tools/read.ts`
@@ -728,6 +745,7 @@ git commit -m "feat: add typed rpc contracts and client"
 - Create: `mcp/test/instructions.test.ts`
 
 **Interfaces:**
+
 - Produces stdio MCP tools: `list_projects`, `get_project_board`, `search_tickets`, `get_ticket`, `list_actionable_tickets`, `read_attachment`, `create_project`, `update_project`, `archive_project`, `restore_project`, `create_ticket`, `update_ticket`, `transition_ticket`, `add_comment`, `add_attachment_from_path`, `add_dependency`, and `remove_dependency`.
 
 - [ ] **Step 1: Write tool registry tests**
@@ -778,6 +796,7 @@ git commit -m "feat: expose autoboard mcp tools"
 ### Task 10: Add the Read-only HTTP API and Replayable SSE
 
 **Files:**
+
 - Create: `server/lib/autoboard_web/router.ex`
 - Create: `server/lib/autoboard_web/json.ex`
 - Create: `server/lib/autoboard_web/events_stream.ex`
@@ -787,6 +806,7 @@ git commit -m "feat: expose autoboard mcp tools"
 - Create: `server/test/autoboard_web/events_stream_test.exs`
 
 **Interfaces:**
+
 - Produces only the eight GET endpoints and static SPA fallback from the design, including `GET /api/v1/triage`.
 - SSE emits events with `id`, `event: activity`, and JSON `data` containing `event_type`, `project_id`, optional `ticket_id`, and `inserted_at`.
 
@@ -837,6 +857,7 @@ git commit -m "feat: add read only http api and events"
 ### Task 11: Build the Project Index, Triage, and Kanban Views
 
 **Files:**
+
 - Create: `web/src/runtime.ts`
 - Create: `web/src/api/client.ts`
 - Create: `web/src/router.tsx`
@@ -852,6 +873,7 @@ git commit -m "feat: add read only http api and events"
 - Create: `web/src/read-only.test.tsx`
 
 **Interfaces:**
+
 - Consumes `Project`, `ProjectBoard`, and ticket summary Effect schemas.
 - Produces routes `/projects`, `/projects/:key`, `/projects/:key/canceled`, and `/triage`.
 
@@ -862,8 +884,14 @@ Using Vitest, jsdom, and Testing Library, assert active/archived grouping, fixed
 Add a global read-only assertion:
 
 ```ts
-expect(container.querySelectorAll("form,input,textarea,select,[contenteditable=true]")).toHaveLength(0)
-expect(screen.queryByText(/create|edit|delete|move ticket/i)).not.toBeInTheDocument()
+expect(
+  container.querySelectorAll(
+    "form,input,textarea,select,[contenteditable=true]",
+  ),
+).toHaveLength(0);
+expect(
+  screen.queryByText(/create|edit|delete|move ticket/i),
+).not.toBeInTheDocument();
 ```
 
 Run `corepack pnpm --filter @autoboard/web test` and expect failures.
@@ -903,6 +931,7 @@ git commit -m "feat: add read only project boards"
 ### Task 12: Add Ticket Detail, Markdown, Attachments, and Live Revalidation
 
 **Files:**
+
 - Create: `web/src/pages/TicketDetailPage.tsx`
 - Create: `web/src/components/TicketDrawer.tsx`
 - Create: `web/src/components/Markdown.tsx`
@@ -914,6 +943,7 @@ git commit -m "feat: add read only project boards"
 - Create: `web/src/events/activityStream.test.ts`
 
 **Interfaces:**
+
 - Consumes `TicketDetail` and `ActivityEvent` schemas.
 - Produces `/tickets/:identifier` as a deep-link page and as a drawer when navigation carries a background project location.
 
@@ -953,6 +983,7 @@ git commit -m "feat: add ticket detail and live updates"
 ### Task 13: Add Bootstrap Tasks, Release Assembly, and End-to-End Acceptance
 
 **Files:**
+
 - Create: `server/lib/mix/tasks/autoboard.setup.ex`
 - Create: `server/lib/mix/tasks/autoboard.token.create.ex`
 - Create: `server/lib/autoboard/release.ex`
@@ -966,6 +997,7 @@ git commit -m "feat: add ticket detail and live updates"
 - Create: `docs/codex-mcp-config.md`
 
 **Interfaces:**
+
 - Produces `mix autoboard.setup` and `mix autoboard.token.create --actor me|codex`.
 - Produces a release containing static web assets plus the separate `mcp/dist/main.js` bundle.
 - Produces a black-box acceptance test for the complete MCP-to-browser loop.

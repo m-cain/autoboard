@@ -1,7 +1,7 @@
-import { Schema } from "effect"
-import { pipe } from "effect/Function"
+import { Schema } from "effect";
+import { pipe } from "effect/Function";
 
-type Fields = Parameters<typeof Schema.Struct>[0]
+type Fields = Parameters<typeof Schema.Struct>[0];
 
 /**
  * Effect's Struct parser intentionally drops unrecognized keys. Transport
@@ -11,38 +11,58 @@ type Fields = Parameters<typeof Schema.Struct>[0]
  */
 export const exactStruct = <F extends Fields>(fields: F) =>
   Schema.compose(
-    Schema.filter((value) =>
-      typeof value === "object" &&
-      value !== null &&
-      !Array.isArray(value) &&
-      Object.keys(value).every((key) => Object.hasOwn(fields, key)),
+    Schema.filter(
+      (value) =>
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value) &&
+        Object.keys(value).every((key) => Object.hasOwn(fields, key)),
     )(Schema.Unknown),
     Schema.Struct(fields),
-  )
+  );
 
-export const UUID = pipe(Schema.UUID, Schema.brand("UUID"))
-export const Revision = pipe(Schema.Number, Schema.int(), Schema.positive())
-const utcTimestampPattern = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?Z$/
-const utcTimestampJsonPattern = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+export const UUID = pipe(Schema.UUID, Schema.brand("UUID"));
+export const Revision = pipe(Schema.Number, Schema.int(), Schema.positive());
+const utcTimestampPattern =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?Z$/;
+const utcTimestampJsonPattern =
+  "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$";
 const isUtcTimestamp = (value: string): boolean => {
-  const match = utcTimestampPattern.exec(value)
-  if (!match) return false
-  const [year, month, day, hour, minute, second] = match.slice(1).map(Number)
-  if (hour > 23 || minute > 59 || second > 59 || month! < 1 || month! > 12) return false
-  const leap = year! % 4 === 0 && (year! % 100 !== 0 || year! % 400 === 0)
-  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-  return day! >= 1 && day! <= days[month! - 1]!
-}
-export const Timestamp = pipe(Schema.String, Schema.filter(isUtcTimestamp)).annotations({
+  const match = utcTimestampPattern.exec(value);
+  if (!match) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1).map(Number);
+  if (hour > 23 || minute > 59 || second > 59 || month! < 1 || month! > 12)
+    return false;
+  const leap = year! % 4 === 0 && (year! % 100 !== 0 || year! % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day! >= 1 && day! <= days[month! - 1]!;
+};
+export const Timestamp = pipe(
+  Schema.String,
+  Schema.filter(isUtcTimestamp),
+).annotations({
   jsonSchema: { format: "date-time", pattern: utcTimestampJsonPattern },
-})
-export const Sha256 = pipe(Schema.String, Schema.pattern(/^[a-f0-9]{64}$/))
+});
+export const Sha256 = pipe(Schema.String, Schema.pattern(/^[a-f0-9]{64}$/));
 
-export const ProjectState = Schema.Literal("active", "archived")
-export const TicketStatus = Schema.Literal("triage", "backlog", "ready", "in_progress", "done", "canceled")
-export const Priority = Schema.Literal("none", "low", "medium", "high", "urgent")
-export const Assignee = Schema.Literal("unassigned", "me", "codex")
-export const Actor = Schema.Literal("me", "codex", "system")
+export const ProjectState = Schema.Literal("active", "archived");
+export const TicketStatus = Schema.Literal(
+  "triage",
+  "backlog",
+  "ready",
+  "in_progress",
+  "done",
+  "canceled",
+);
+export const Priority = Schema.Literal(
+  "none",
+  "low",
+  "medium",
+  "high",
+  "urgent",
+);
+export const Assignee = Schema.Literal("unassigned", "me", "codex");
+export const Actor = Schema.Literal("me", "codex", "system");
 
 const ProjectFields = {
   id: UUID,
@@ -53,19 +73,19 @@ const ProjectFields = {
   revision: Revision,
   inserted_at: Timestamp,
   updated_at: Timestamp,
-} as const
+} as const;
 
-export const ProjectJsonSchema = Schema.Struct(ProjectFields)
-export const Project = exactStruct(ProjectFields)
+export const ProjectJsonSchema = Schema.Struct(ProjectFields);
+export const Project = exactStruct(ProjectFields);
 
 const LabelFields = {
   id: UUID,
   name: Schema.NonEmptyString,
   project_id: UUID,
-} as const
+} as const;
 
-export const LabelJsonSchema = Schema.Struct(LabelFields)
-export const Label = exactStruct(LabelFields)
+export const LabelJsonSchema = Schema.Struct(LabelFields);
+export const Label = exactStruct(LabelFields);
 
 const TicketSummaryFields = {
   id: UUID,
@@ -84,13 +104,13 @@ const TicketSummaryFields = {
   attachment_count: pipe(Schema.Number, Schema.int(), Schema.nonNegative()),
   inserted_at: Timestamp,
   updated_at: Timestamp,
-} as const
+} as const;
 
 export const TicketSummaryJsonSchema = Schema.Struct({
   ...TicketSummaryFields,
   labels: Schema.Array(LabelJsonSchema),
-})
-export const TicketSummary = exactStruct(TicketSummaryFields)
+});
+export const TicketSummary = exactStruct(TicketSummaryFields);
 
 const AttachmentFields = {
   id: UUID,
@@ -102,18 +122,18 @@ const AttachmentFields = {
   sha256: Sha256,
   actor: Actor,
   inserted_at: Timestamp,
-} as const
+} as const;
 
-export const AttachmentJsonSchema = Schema.Struct(AttachmentFields)
-export const Attachment = exactStruct(AttachmentFields)
+export const AttachmentJsonSchema = Schema.Struct(AttachmentFields);
+export const Attachment = exactStruct(AttachmentFields);
 
 const AttachmentRpcFields = {
   ...AttachmentFields,
   managed_path: Schema.NonEmptyString,
-} as const
+} as const;
 
-export const AttachmentRpcJsonSchema = Schema.Struct(AttachmentRpcFields)
-export const AttachmentRpc = exactStruct(AttachmentRpcFields)
+export const AttachmentRpcJsonSchema = Schema.Struct(AttachmentRpcFields);
+export const AttachmentRpc = exactStruct(AttachmentRpcFields);
 
 const CommentFields = {
   id: UUID,
@@ -122,10 +142,10 @@ const CommentFields = {
   body: Schema.String,
   actor: Actor,
   inserted_at: Timestamp,
-} as const
+} as const;
 
-export const CommentJsonSchema = Schema.Struct(CommentFields)
-export const Comment = exactStruct(CommentFields)
+export const CommentJsonSchema = Schema.Struct(CommentFields);
+export const Comment = exactStruct(CommentFields);
 
 const ActivityEventFields = {
   id: pipe(Schema.Number, Schema.int(), Schema.positive()),
@@ -135,10 +155,10 @@ const ActivityEventFields = {
   ticket_id: Schema.NullOr(UUID),
   payload: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
   inserted_at: Timestamp,
-} as const
+} as const;
 
-export const ActivityEventJsonSchema = Schema.Struct(ActivityEventFields)
-export const ActivityEvent = exactStruct(ActivityEventFields)
+export const ActivityEventJsonSchema = Schema.Struct(ActivityEventFields);
+export const ActivityEvent = exactStruct(ActivityEventFields);
 
 const TicketDetailFields = {
   ...TicketSummaryFields,
@@ -150,7 +170,7 @@ const TicketDetailFields = {
   comments: Schema.Array(Comment),
   attachments: Schema.Array(Attachment),
   activity: Schema.Array(ActivityEvent),
-} as const
+} as const;
 
 export const TicketDetailJsonSchema = Schema.Struct({
   ...TicketSummaryFields,
@@ -163,8 +183,8 @@ export const TicketDetailJsonSchema = Schema.Struct({
   comments: Schema.Array(CommentJsonSchema),
   attachments: Schema.Array(AttachmentJsonSchema),
   activity: Schema.Array(ActivityEventJsonSchema),
-})
-export const TicketDetail = exactStruct(TicketDetailFields)
+});
+export const TicketDetail = exactStruct(TicketDetailFields);
 
 const ProjectBoardFields = {
   project: Project,
@@ -174,7 +194,7 @@ const ProjectBoardFields = {
     in_progress: Schema.Array(TicketSummary),
     done: Schema.Array(TicketSummary),
   }),
-} as const
+} as const;
 
 export const ProjectBoardJsonSchema = Schema.Struct({
   project: ProjectJsonSchema,
@@ -184,13 +204,13 @@ export const ProjectBoardJsonSchema = Schema.Struct({
     in_progress: Schema.Array(TicketSummaryJsonSchema),
     done: Schema.Array(TicketSummaryJsonSchema),
   }),
-})
-export const ProjectBoard = exactStruct(ProjectBoardFields)
+});
+export const ProjectBoard = exactStruct(ProjectBoardFields);
 
-export type Project = Schema.Schema.Encoded<typeof Project>
-export type TicketSummary = Schema.Schema.Encoded<typeof TicketSummary>
-export type TicketDetail = Schema.Schema.Encoded<typeof TicketDetail>
-export type ProjectBoard = Schema.Schema.Encoded<typeof ProjectBoard>
-export type ActivityEvent = Schema.Schema.Encoded<typeof ActivityEvent>
-export type Attachment = Schema.Schema.Encoded<typeof Attachment>
-export type AttachmentRpc = Schema.Schema.Encoded<typeof AttachmentRpc>
+export type Project = Schema.Schema.Encoded<typeof Project>;
+export type TicketSummary = Schema.Schema.Encoded<typeof TicketSummary>;
+export type TicketDetail = Schema.Schema.Encoded<typeof TicketDetail>;
+export type ProjectBoard = Schema.Schema.Encoded<typeof ProjectBoard>;
+export type ActivityEvent = Schema.Schema.Encoded<typeof ActivityEvent>;
+export type Attachment = Schema.Schema.Encoded<typeof Attachment>;
+export type AttachmentRpc = Schema.Schema.Encoded<typeof AttachmentRpc>;

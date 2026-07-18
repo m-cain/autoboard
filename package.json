@@ -4,6 +4,12 @@
   "packageManager": "pnpm@11.13.1",
   "scripts": {
     "check": "pnpm -r check",
+    "format:prettier": "prettier . --write",
+    "format:prettier:check": "prettier . --check",
+    "format:mix": "cd server && mix format",
+    "format:mix:check": "cd server && mix format --check-formatted",
+    "format": "pnpm format:prettier && pnpm format:mix",
+    "format:check": "pnpm format:prettier:check && pnpm format:mix:check",
     "test": "pnpm -r --filter '!@autoboard/e2e' test",
     "test:e2e": "pnpm --filter @autoboard/e2e test",
     "build:contracts": "pnpm --filter @autoboard/contracts build",
@@ -11,5 +17,8 @@
     "build:web": "pnpm --filter @autoboard/web build",
     "build:server": "rm -rf server/priv/static && mkdir -p server/priv/static && cp -R web/dist/. server/priv/static/ && cd server && MIX_ENV=prod mix release --overwrite",
     "build": "pnpm build:contracts && pnpm build:mcp && pnpm build:web && pnpm build:server"
+  },
+  "devDependencies": {
+    "prettier": "3.9.5"
   }
 }

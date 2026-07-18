@@ -18,12 +18,12 @@ corepack pnpm build
 
 The release reads these optional environment variables:
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | `ecto://autoboard:autoboard@localhost/autoboard_dev` | PostgreSQL connection URL |
-| `AUTOBOARD_DATA_DIR` | `server/var` | Private attachment and socket directory |
-| `AUTOBOARD_SOCKET` | `<data-dir>/autoboard.sock` | Unix socket used by MCP |
-| `AUTOBOARD_HTTP_PORT` | `4040` | Loopback-only HTTP port |
+| Variable              | Default                                              | Purpose                                 |
+| --------------------- | ---------------------------------------------------- | --------------------------------------- |
+| `DATABASE_URL`        | `ecto://autoboard:autoboard@localhost/autoboard_dev` | PostgreSQL connection URL               |
+| `AUTOBOARD_DATA_DIR`  | `server/var`                                         | Private attachment and socket directory |
+| `AUTOBOARD_SOCKET`    | `<data-dir>/autoboard.sock`                          | Unix socket used by MCP                 |
+| `AUTOBOARD_HTTP_PORT` | `4040`                                               | Loopback-only HTTP port                 |
 
 Open `http://127.0.0.1:4040/projects` after the release becomes healthy. The HTTP API exposes only `GET` endpoints and the UI intentionally contains no mutation controls. The MCP adapter is built separately at `mcp/dist/main.js`; it is not bundled into the Elixir release.
 

@@ -22,15 +22,19 @@ defmodule Autoboard.Repo.Migrations.CreateTicketsAndLabels do
     create index(:tickets, [:project_id, :assignee])
     create index(:tickets, [:parent_ticket_id])
     create constraint(:tickets, :tickets_positive_number_check, check: "number > 0")
+
     create constraint(:tickets, :tickets_status_check,
              check: "status IN ('triage', 'backlog', 'ready', 'in_progress', 'done', 'canceled')"
            )
+
     create constraint(:tickets, :tickets_priority_check,
              check: "priority IN ('none', 'low', 'medium', 'high', 'urgent')"
            )
+
     create constraint(:tickets, :tickets_assignee_check,
              check: "assignee IN ('unassigned', 'me', 'codex')"
            )
+
     create constraint(:tickets, :tickets_no_self_parent_check,
              check: "parent_ticket_id IS NULL OR parent_ticket_id <> id"
            )
@@ -60,7 +64,10 @@ defmodule Autoboard.Repo.Migrations.CreateTicketsAndLabels do
   end
 
   def down do
-    execute("ALTER TABLE activity_events DROP CONSTRAINT IF EXISTS activity_events_ticket_id_fkey")
+    execute(
+      "ALTER TABLE activity_events DROP CONSTRAINT IF EXISTS activity_events_ticket_id_fkey"
+    )
+
     drop table(:ticket_labels)
     drop table(:labels)
     drop table(:tickets)

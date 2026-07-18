@@ -1,31 +1,67 @@
 // @vitest-environment jsdom
-import "@testing-library/jest-dom/vitest"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
-import { MemoryRouter, useLocation } from "react-router"
-import { afterEach, describe, expect, it, vi } from "vitest"
-import { TicketDrawer } from "./TicketDrawer.js"
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { TicketDrawer } from "./TicketDrawer.js";
 
-const CurrentPath = () => <p data-testid="path">{useLocation().pathname}</p>
+const CurrentPath = () => <p data-testid="path">{useLocation().pathname}</p>;
 
-afterEach(cleanup)
+afterEach(cleanup);
 
 describe("TicketDrawer", () => {
   it("traps initial focus, closes on Escape by navigation, and restores page scrolling", async () => {
-    document.body.style.overflow = "auto"
-    const { unmount } = render(<MemoryRouter initialEntries={["/projects/AUTO", "/tickets/AUTO-1"]} initialIndex={1}><TicketDrawer closeTo="/projects/AUTO" drawerDepth={1} focusKey="ticket-1"><a href="#detail">Detail link</a></TicketDrawer><CurrentPath /></MemoryRouter>)
+    document.body.style.overflow = "auto";
+    const { unmount } = render(
+      <MemoryRouter
+        initialEntries={["/projects/AUTO", "/tickets/AUTO-1"]}
+        initialIndex={1}
+      >
+        <TicketDrawer
+          closeTo="/projects/AUTO"
+          drawerDepth={1}
+          focusKey="ticket-1"
+        >
+          <a href="#detail">Detail link</a>
+        </TicketDrawer>
+        <CurrentPath />
+      </MemoryRouter>,
+    );
 
-    const close = screen.getByRole("link", { name: "Back to board" })
-    expect(close).toHaveFocus()
-    expect(document.body.style.overflow).toBe("hidden")
-    fireEvent.keyDown(document, { key: "Escape" })
-    await vi.waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent("/projects/AUTO"))
-    unmount()
-    expect(document.body.style.overflow).toBe("auto")
-  })
+    const close = screen.getByRole("link", { name: "Back to board" });
+    expect(close).toHaveFocus();
+    expect(document.body.style.overflow).toBe("hidden");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("path")).toHaveTextContent("/projects/AUTO"),
+    );
+    unmount();
+    expect(document.body.style.overflow).toBe("auto");
+  });
 
   it("uses the drawer depth for backdrop and close-link exits", async () => {
-    const { container } = render(<MemoryRouter initialEntries={["/projects/AUTO", "/tickets/AUTO-1", "/tickets/AUTO-2"]} initialIndex={2}><TicketDrawer closeTo="/projects/AUTO" drawerDepth={2} focusKey="ticket-2"><a href="#detail">Detail link</a></TicketDrawer><CurrentPath /></MemoryRouter>)
-    fireEvent.mouseDown(container.querySelector(".ticket-drawer-backdrop")!)
-    await vi.waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent("/projects/AUTO"))
-  })
-})
+    const { container } = render(
+      <MemoryRouter
+        initialEntries={[
+          "/projects/AUTO",
+          "/tickets/AUTO-1",
+          "/tickets/AUTO-2",
+        ]}
+        initialIndex={2}
+      >
+        <TicketDrawer
+          closeTo="/projects/AUTO"
+          drawerDepth={2}
+          focusKey="ticket-2"
+        >
+          <a href="#detail">Detail link</a>
+        </TicketDrawer>
+        <CurrentPath />
+      </MemoryRouter>,
+    );
+    fireEvent.mouseDown(container.querySelector(".ticket-drawer-backdrop")!);
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("path")).toHaveTextContent("/projects/AUTO"),
+    );
+  });
+});
