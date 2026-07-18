@@ -31,6 +31,15 @@ For Codex setup, see [docs/codex-mcp-config.md](docs/codex-mcp-config.md).
 
 ## Development and verification
 
+Format source files before checking them:
+
+```bash
+corepack pnpm format
+corepack pnpm format:check
+```
+
+`corepack pnpm format` rewrites files; `corepack pnpm format:check` is check-only verification. Git hooks install automatically with `corepack pnpm install`; run `corepack pnpm prepare` to repair or reinstall them. The pre-commit hook is check-only: when it reports formatting problems, format and restage the affected files before committing.
+
 ```bash
 docker compose up -d postgres
 (cd server && MIX_ENV=test mix ecto.reset && mix format --check-formatted && mix test)

@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.13.1",
   "scripts": {
-    "check": "pnpm -r check",
+    "check": "pnpm format:check && pnpm -r check",
     "format:prettier": "prettier . --write",
     "format:prettier:check": "prettier . --check",
     "format:mix": "cd server && mix format",
@@ -16,9 +16,11 @@
     "build:mcp": "pnpm --filter @autoboard/mcp build",
     "build:web": "pnpm --filter @autoboard/web build",
     "build:server": "rm -rf server/priv/static && mkdir -p server/priv/static && cp -R web/dist/. server/priv/static/ && cd server && MIX_ENV=prod mix release --overwrite",
-    "build": "pnpm build:contracts && pnpm build:mcp && pnpm build:web && pnpm build:server"
+    "build": "pnpm build:contracts && pnpm build:mcp && pnpm build:web && pnpm build:server",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "husky": "9.1.7",
     "prettier": "3.9.5"
   }
 }
