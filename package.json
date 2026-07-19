@@ -1,7 +1,7 @@
 {
   "name": "autoboard",
   "private": true,
-  "packageManager": "pnpm@11.13.1",
+  "packageManager": "pnpm@11.14.0",
   "scripts": {
     "check": "pnpm format:check && pnpm -r check",
     "format:prettier": "prettier . --write",
