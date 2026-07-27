@@ -1,0 +1,158 @@
+{
+  "$ref": "#/definitions/TicketList",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "Label": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "project_id"
+      ],
+      "type": "object"
+    },
+    "Ticket": {
+      "additionalProperties": false,
+      "properties": {
+        "assignee": {
+          "enum": [
+            "unassigned",
+            "me",
+            "codex"
+          ],
+          "type": "string"
+        },
+        "attachment_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "comment_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "identifier": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "$ref": "#/definitions/Label"
+          },
+          "type": "array"
+        },
+        "parent_ticket_id": {
+          "oneOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "urgent"
+          ],
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "triage",
+            "backlog",
+            "ready",
+            "in_progress",
+            "done",
+            "canceled"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "identifier",
+        "project_id",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "assignee",
+        "revision",
+        "parent_ticket_id",
+        "labels",
+        "blocked",
+        "comment_count",
+        "attachment_count",
+        "inserted_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "TicketList": {
+      "additionalProperties": false,
+      "properties": {
+        "tickets": {
+          "items": {
+            "$ref": "#/definitions/Ticket"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tickets"
+      ],
+      "type": "object"
+    }
+  }
+}

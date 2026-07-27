@@ -1,83 +1,113 @@
 # Autoboard
 
-Autoboard is a local, single-user project board. Its browser application is deliberately read-only: create projects, tickets, dependencies, comments, and attachments through its MCP server, then use the browser to browse the canonical state.
+Autoboard is a local, single-user project board. Its browser application is
+deliberately read-only: create projects, tickets, dependencies, comments, and
+attachments through MCP, then use the browser to inspect canonical state.
 
-## Local operation
+One Go daemon owns SQLite persistence, the 17 MCP tools, the read-only HTTP API,
+the replayable activity stream, and the embedded React application. There is no
+separate database, RPC layer, or MCP adapter.
 
-Requirements: Docker with Compose, Elixir/Erlang, Node.js with Corepack, and Just 1.36 or newer. PostgreSQL is supplied through Compose.
+## Local development
 
-Prepare a fresh checkout, create a Codex credential, and start the hot-reload development stack:
+Requirements: Go 1.25, Node.js with Corepack, and Just 1.36 or newer.
 
 ```bash
 just setup
-just token codex
 just dev
 ```
 
-Open `http://localhost:5173/projects`. Vite serves the browser application with hot reload and proxies `/api` and its server-sent event stream to the Elixir server. Press Ctrl-C once to stop both development processes.
+Open `http://localhost:5173/projects`. Vite provides hot reload and proxies API
+and SSE requests to the Go daemon on `127.0.0.1:4040`. Press Ctrl-C once to stop
+both processes. Repository-run commands keep development state under the
+ignored `autoboard-data/` directory.
 
-`just setup` installs the pnpm and Mix dependencies, installs the Git hooks and Playwright Chromium runtime, starts PostgreSQL, migrates it, and initializes the private data directories. It is safe to run again. Token creation stays separate because `just token me` and `just token codex` each print one new plaintext token exactly once. The database persists only a SHA-256 digest, so save the printed token in a local secret store before closing the terminal.
-
-To build and run the integrated production release instead:
+Build and run the integrated binary with:
 
 ```bash
 just serve
 ```
 
-Open `http://127.0.0.1:4040/projects` after the release becomes healthy. The HTTP API exposes only `GET` endpoints and the UI intentionally contains no mutation controls. The MCP adapter is built separately at `mcp/dist/main.js`; it is not bundled into the Elixir release.
+Then open `http://127.0.0.1:4040/projects`. The same binary exposes the MCP
+endpoint at `http://127.0.0.1:4040/mcp`.
 
-### Local configuration
+## macOS service
 
-Just automatically loads an optional, ignored root `.env` file. Variables already exported by the shell take precedence. The application and Compose defaults are:
+Install or update the production binary and its user LaunchAgent:
 
-| Variable                | Default                                              | Purpose                                           |
-| ----------------------- | ---------------------------------------------------- | ------------------------------------------------- |
-| `DATABASE_URL`          | `ecto://autoboard:autoboard@localhost/autoboard_dev` | PostgreSQL connection URL                         |
-| `AUTOBOARD_DATA_DIR`    | `server/var`                                         | Private attachment and socket directory           |
-| `AUTOBOARD_SOCKET`      | `<data-dir>/autoboard.sock`                          | Unix socket used by MCP                           |
-| `AUTOBOARD_HTTP_PORT`   | `4040`                                               | Elixir HTTP port and Vite proxy target            |
-| `AUTOBOARD_DB_NAME`     | `autoboard`                                          | Initial Compose database                          |
-| `AUTOBOARD_DB_USER`     | `autoboard`                                          | Compose database user                             |
-| `AUTOBOARD_DB_PASSWORD` | `autoboard`                                          | Compose database password                         |
-| `AUTOBOARD_DB_PORT`     | `5432`                                               | Loopback PostgreSQL port                          |
-| `COMPOSE_PROJECT_NAME`  | `autoboard`                                          | Stable Compose project shared by linked worktrees |
+```bash
+just install
+```
 
-Override `COMPOSE_PROJECT_NAME`, `AUTOBOARD_DB_PORT`, and the corresponding database URLs together when a worktree needs an isolated PostgreSQL instance.
+This builds the application, installs and verifies the service, records the
+source checkout for future updates, and registers the exact Streamable HTTP URL
+with Codex. The service starts immediately and on login. Its database,
+attachments, binary, installation record, and logs live under
+`~/Library/Application Support/Autoboard`; the LaunchAgent property list lives
+under `~/Library/LaunchAgents`.
 
-For Codex setup, see [docs/codex-mcp-config.md](docs/codex-mcp-config.md).
+Useful lifecycle commands are `just update-service`, `just service-status`,
+`just restart-service`, `just stop-service`, `just start-service`, and
+`just uninstall-service`. Updates rebuild from the checkout recorded at install
+time. Uninstalling removes the managed binary, LaunchAgent, and matching Codex
+registration but deliberately preserves the database and attachments.
+
+See [Codex MCP configuration](docs/codex-mcp-config.md) for client setup.
+
+## Configuration
+
+The daemon accepts these environment variables:
+
+| Variable                         | Default                            | Purpose                         |
+| -------------------------------- | ---------------------------------- | ------------------------------- |
+| `AUTOBOARD_HTTP_PORT`            | `4040`                             | Loopback HTTP and MCP port      |
+| `AUTOBOARD_DATA_DIR`             | User config directory `/Autoboard` | Database, attachments, and logs |
+| `AUTOBOARD_DATABASE_PATH`        | `<data-dir>/autoboard.db`          | SQLite database path            |
+| `AUTOBOARD_MAX_ATTACHMENT_BYTES` | `52428800`                         | Maximum copied attachment size  |
+| `AUTOBOARD_DEVELOPMENT`          | unset                              | Permit the Vite proxy when `1`  |
+
+The daemon always binds to `127.0.0.1`. Its MCP endpoint is intentionally a
+full-write local interface, protected by peer, Host, and Origin checks rather
+than application credentials. The SQLite database path must remain inside the
+private data directory.
 
 ## Development and verification
 
-Run `just` without arguments to see the grouped command list. The most common recipes are:
+Run `just` to see the grouped command list. The common recipes are:
 
-| Task                     | Command                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| Start the complete stack | `just dev`                                                                         |
-| Run one development app  | `just dev-server` / `just dev-web`                                                 |
-| Build everything         | `just build`                                                                       |
-| Build one component      | `just build-contracts`, `just build-mcp`, `just build-web`, or `just build-server` |
-| Run unit tests           | `just test`                                                                        |
-| Run E2E                  | `just test-e2e`                                                                    |
-| Format source            | `just format`                                                                      |
-| Run static checks        | `just check`                                                                       |
-| Verify a handoff         | `just verify`                                                                      |
+| Task                        | Command                                             |
+| --------------------------- | --------------------------------------------------- |
+| Start daemon and Vite       | `just dev`                                          |
+| Run one development process | `just dev-daemon` / `just dev-web`                  |
+| Build the integrated binary | `just build`                                        |
+| Build one layer             | `just build-contracts`, `build-web`, `build-daemon` |
+| Run unit tests              | `just test`                                         |
+| Run black-box acceptance    | `just test-e2e`                                     |
+| Measure all coverage        | `just coverage`                                     |
+| Measure Go coverage         | `just coverage-go`                                  |
+| Measure TypeScript coverage | `just coverage-typescript`                          |
+| Run pinned Go lint          | `just lint-go`                                      |
+| Run the Git commit gate     | `just pre-commit`                                   |
+| Format source               | `just format`                                       |
+| Run static checks           | `just check`                                        |
+| Verify a handoff            | `just verify`                                       |
 
-Database lifecycle recipes are `just db-up`, `just db-down`, `just db-status`, and `just db-logs`. `just db-down` preserves the named volume. `just db-reset` requires confirmation, refuses non-loopback database URLs, and then drops and recreates only the configured development database.
+Coverage is a required quality gate. Go must remain at least 80% covered
+overall and at least 70% in every first-party package. Both
+`@autoboard/contracts` and `@autoboard/web` must independently remain at least
+80% covered for lines, statements, and functions and at least 75% for
+branches. All first-party production source is measured; generated contracts
+are the only exclusion. Tests must exercise observable behavior rather than
+importing code solely to improve the number. Do not lower thresholds or broaden
+exclusions without explicit approval.
 
-`just format` rewrites Just, Prettier-owned, and Mix-owned files; `just format-check` is check-only verification. Git hooks install through `just setup` or `pnpm install`. The pre-commit hook remains check-only: when it reports formatting problems, format and restage the affected files before committing.
+`just lint-go` installs and runs the repository-pinned golangci-lint v2.12.2
+binary from `.tools/bin`; no global linter is required. Husky invokes
+`just pre-commit`, which checks formatting and generated contracts, runs static
+analysis and unit tests, and enforces both coverage policies.
 
-### Underlying commands
-
-The Just recipes compose these existing commands. They remain useful when debugging an individual layer:
-
-```bash
-corepack pnpm format
-corepack pnpm format:check
-docker compose up -d postgres
-(cd server && MIX_ENV=test mix ecto.reset && mix format --check-formatted && mix test)
-corepack pnpm check && corepack pnpm test && corepack pnpm build
-corepack pnpm --filter @autoboard/e2e test
-git diff --check
-```
-
-The E2E test starts its own temporary server, Unix socket, data directory, `autoboard_e2e` database, MCP child process, and Playwright browser. It leaves no token or runtime files in the repository. `just setup` installs its browser runtime; the direct equivalent is `corepack pnpm --filter @autoboard/e2e exec playwright install chromium`.
+`just verify` includes the commit gate, Go race tests, production builds, and
+the isolated MCP-to-browser Playwright scenario. The E2E runner creates a
+unique temporary SQLite database and data directory, restarts the daemon to
+verify persistence and SSE replay, and removes only the temporary resources it
+owns.

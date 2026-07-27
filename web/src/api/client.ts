@@ -1,17 +1,14 @@
-import { Context, Data, Effect, Schema } from "effect";
+import { Context, Data, Effect } from "effect";
 import {
-  Project,
-  ProjectBoard,
-  TicketDetail,
-  TicketSummary,
-  exactStruct,
+  decodeBrowserProjectBoard,
+  decodeBrowserProjectList,
+  decodeBrowserTicketDetail,
+  decodeBrowserTicketList,
+  type BrowserProjectBoard,
+  type BrowserProjectList,
+  type BrowserTicketDetail,
+  type BrowserTicketList,
 } from "@autoboard/contracts";
-
-const ProjectsResponse = exactStruct({
-  active: Schema.Array(Project),
-  archived: Schema.Array(Project),
-});
-const TicketList = exactStruct({ tickets: Schema.Array(TicketSummary) });
 
 export class HttpError extends Data.TaggedError("HttpError")<{
   readonly status: number;
@@ -31,34 +28,34 @@ export type ApiClientService = {
   readonly listProjects: (
     signal?: AbortSignal,
   ) => Effect.Effect<
-    Schema.Schema.Type<typeof ProjectsResponse>,
+    BrowserProjectList,
     HttpError | NetworkError | DecodeError | RequestAbortedError
   >;
   readonly listTriage: (
     signal?: AbortSignal,
   ) => Effect.Effect<
-    Schema.Schema.Type<typeof TicketList>,
+    BrowserTicketList,
     HttpError | NetworkError | DecodeError | RequestAbortedError
   >;
   readonly getProjectBoard: (
     key: string,
     signal?: AbortSignal,
   ) => Effect.Effect<
-    Schema.Schema.Type<typeof ProjectBoard>,
+    BrowserProjectBoard,
     HttpError | NetworkError | DecodeError | RequestAbortedError
   >;
   readonly getCanceledTickets: (
     key: string,
     signal?: AbortSignal,
   ) => Effect.Effect<
-    Schema.Schema.Type<typeof TicketList>,
+    BrowserTicketList,
     HttpError | NetworkError | DecodeError | RequestAbortedError
   >;
   readonly getTicket: (
     identifier: string,
     signal?: AbortSignal,
   ) => Effect.Effect<
-    Schema.Schema.Type<typeof TicketDetail>,
+    BrowserTicketDetail,
     HttpError | NetworkError | DecodeError | RequestAbortedError
   >;
 };
@@ -124,12 +121,12 @@ export const createApiClient = (
         signal,
       ));
 
-  const get = <S extends Schema.Schema.Any>(
+  const get = <A>(
     path: string,
-    schema: S,
+    decode: (value: unknown) => A,
     signal?: AbortSignal,
   ): Effect.Effect<
-    Schema.Schema.Type<S>,
+    A,
     HttpError | NetworkError | DecodeError | RequestAbortedError
   > =>
     Effect.tryPromise({
@@ -169,16 +166,7 @@ export const createApiClient = (
             }
 
             try {
-              // All browser transport schemas are context-free. `exactStruct`
-              // currently retains `unknown` in its public context parameter, so
-              // establish that boundary once rather than accepting unknown JSON.
-              return await Schema.decodeUnknownPromise(
-                schema as unknown as Schema.Schema<
-                  Schema.Schema.Type<S>,
-                  Schema.Schema.Encoded<S>,
-                  never
-                >,
-              )(payload);
+              return decode(payload);
             } catch {
               throw new DecodeError({
                 message: "Response did not match the expected schema",
@@ -213,17 +201,27 @@ export const createApiClient = (
     });
 
   return {
-    listProjects: (signal) => get("/api/v1/projects", ProjectsResponse, signal),
-    listTriage: (signal) => get("/api/v1/triage", TicketList, signal),
+    listProjects: (signal) =>
+      get("/api/v1/projects", decodeBrowserProjectList, signal),
+    listTriage: (signal) =>
+      get("/api/v1/triage", decodeBrowserTicketList, signal),
     getProjectBoard: (key, signal) =>
-      get(`/api/v1/projects/${encodeSegment(key)}/board`, ProjectBoard, signal),
+      get(
+        `/api/v1/projects/${encodeSegment(key)}/board`,
+        decodeBrowserProjectBoard,
+        signal,
+      ),
     getCanceledTickets: (key, signal) =>
       get(
         `/api/v1/projects/${encodeSegment(key)}/canceled`,
-        TicketList,
+        decodeBrowserTicketList,
         signal,
       ),
     getTicket: (identifier, signal) =>
-      get(`/api/v1/tickets/${encodeSegment(identifier)}`, TicketDetail, signal),
+      get(
+        `/api/v1/tickets/${encodeSegment(identifier)}`,
+        decodeBrowserTicketDetail,
+        signal,
+      ),
   };
 };

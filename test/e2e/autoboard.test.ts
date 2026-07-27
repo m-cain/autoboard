@@ -1,9 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { chromium, type Browser, type Page, type Route } from "playwright";
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
 
 type Project = { id: string; key: string; revision: number; name: string };
 type Ticket = {
@@ -22,17 +20,13 @@ const required = (key: string): string => {
   return value;
 };
 
-const root = resolve(import.meta.dirname, "../..");
-const socketPath = required("AUTOBOARD_E2E_SOCKET");
-const token = required("AUTOBOARD_E2E_TOKEN");
-let baseUrl = required("AUTOBOARD_E2E_URL");
+const baseUrl = required("AUTOBOARD_E2E_URL");
 const attachmentPath = required("AUTOBOARD_E2E_ATTACHMENT");
 const controlUrl = required("AUTOBOARD_E2E_CONTROL_URL");
 const controlToken = required("AUTOBOARD_E2E_CONTROL_TOKEN");
-const mcpEntrypoint = join(root, "mcp/dist/main.js");
 
 let client: Client;
-let transport: StdioClientTransport;
+let transport: StreamableHTTPClientTransport;
 let browser: Browser;
 let page: Page;
 
@@ -60,22 +54,7 @@ const failedTool = async (
 };
 
 const connectMcp = async () => {
-  expect(
-    existsSync(mcpEntrypoint),
-    "build the MCP adapter before running the e2e suite",
-  ).toBe(true);
-  transport = new StdioClientTransport({
-    command: process.execPath,
-    args: [mcpEntrypoint],
-    cwd: root,
-    env: {
-      ...process.env,
-      AUTOBOARD_SOCKET: socketPath,
-      AUTOBOARD_TOKEN: token,
-    },
-    stderr: "pipe",
-  });
-  transport.stderr?.on("data", () => undefined);
+  transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`));
   client = new Client({ name: "autoboard-e2e", version: "1.0.0" });
   await client.connect(transport);
 };

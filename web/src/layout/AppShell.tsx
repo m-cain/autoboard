@@ -7,7 +7,7 @@ import {
   useRevalidator,
   useRouteLoaderData,
 } from "react-router";
-import type { Project } from "@autoboard/contracts";
+import type { Project, TicketDetail } from "@autoboard/contracts";
 import { activityStream } from "../events/activityStream.js";
 import { startActivityRevalidation } from "../events/liveRevalidation.js";
 import { isActivityRelevant } from "../events/revalidation.js";
@@ -56,6 +56,16 @@ type RootData = {
   readonly triage: { readonly tickets: readonly { readonly id: string }[] };
 };
 
+type CurrentRoute = {
+  readonly pathname: string;
+  readonly projects: readonly Project[];
+  readonly ticket?: TicketDetail & {
+    readonly relatedTicketIds?: readonly string[];
+  };
+  readonly drawer: boolean;
+  readonly rootTriageTicketIds: readonly string[];
+};
+
 export const RouterAppShell = () => {
   const data = useRouteLoaderData("root") as RootData;
   const location = useLocation();
@@ -67,7 +77,7 @@ export const RouterAppShell = () => {
   const rootTriageTicketIds = data.triage.tickets.map(
     (triageTicket) => triageTicket.id,
   );
-  const current = useRef({
+  const current = useRef<CurrentRoute>({
     pathname: location.pathname,
     projects,
     ticket: ticketData?.ticket,
@@ -83,7 +93,7 @@ export const RouterAppShell = () => {
         ...ticket.blocked_tickets,
       ]
         .filter(
-          (related): related is { readonly id: string } => related !== null,
+          (related): related is NonNullable<typeof related> => related !== null,
         )
         .map((related) => related.id)
     : undefined;

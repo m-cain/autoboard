@@ -1,5 +1,9 @@
 # Autoboard v1 Design
 
+> Historical: this Elixir/PostgreSQL/stdio design was superseded by the
+> single-daemon Go/SQLite/Streamable HTTP architecture in July 2026. See the
+> root README for the current architecture.
+
 **Status:** Approved in conversation on 2026-07-16
 
 ## Summary

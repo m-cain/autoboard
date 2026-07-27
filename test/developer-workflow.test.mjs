@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { resolve } from "node:path";
 
@@ -43,7 +44,6 @@ test("lists the complete grouped developer command surface", () => {
     "Development",
     "Build",
     "Quality",
-    "Database",
     "Operations",
   ]) {
     assert.match(result.output, new RegExp(`\\[${group}\\]`));
@@ -51,33 +51,38 @@ test("lists the complete grouped developer command surface", () => {
 
   for (const recipe of [
     "setup",
+    "dependencies",
     "install",
     "playwright-install",
     "dev",
-    "dev-server",
+    "dev-daemon",
     "dev-web",
     "serve",
     "build",
     "build-contracts",
-    "build-mcp",
     "build-web",
-    "build-server",
+    "build-daemon",
     "check",
     "test",
     "test-contracts",
-    "test-mcp",
     "test-web",
-    "test-server",
+    "test-go",
     "test-e2e",
+    "coverage",
+    "coverage-go",
+    "coverage-typescript",
+    "lint-go",
+    "pre-commit",
     "format",
     "format-check",
     "verify",
-    "db-up",
-    "db-down",
-    "db-status",
-    "db-logs",
-    "db-reset",
-    'token actor="codex"',
+    "install-service",
+    "update-service",
+    "uninstall-service",
+    "start-service",
+    "stop-service",
+    "restart-service",
+    "service-status",
   ]) {
     assert.match(
       result.output,
@@ -91,19 +96,25 @@ test("dry runs preserve bootstrap and build dependency order", () => {
   assert.equal(setup.status, 0, setup.output);
   expectInOrder(setup.output, [
     "pnpm install",
-    "mix deps.get",
-    "docker compose up -d --wait postgres",
-    "mix ecto.create",
-    "mix autoboard.setup",
+    "go mod download",
     "playwright install chromium",
   ]);
 
-  const server = runJust(["--dry-run", "build-server"]);
-  assert.equal(server.status, 0, server.output);
-  expectInOrder(server.output, [
+  const install = runJust(["--dry-run", "install"]);
+  assert.equal(install.status, 0, install.output);
+  expectInOrder(install.output, [
+    "pnpm install",
+    "go mod download",
+    "pnpm build",
+    "./dist/autoboard install",
+  ]);
+
+  const daemon = runJust(["--dry-run", "build-daemon"]);
+  assert.equal(daemon.status, 0, daemon.output);
+  expectInOrder(daemon.output, [
     "build:contracts",
     "build:web",
-    "build:server",
+    "build:daemon",
   ]);
 
   const e2e = runJust(["--dry-run", "test-e2e"]);
@@ -111,13 +122,103 @@ test("dry runs preserve bootstrap and build dependency order", () => {
   expectInOrder(e2e.output, ["pnpm build", "pnpm test:e2e"]);
 });
 
-test("database reset refuses non-loopback database URLs before Compose starts", () => {
-  const result = runJust(["--yes", "db-reset"], {
-    DATABASE_URL: "ecto://autoboard:autoboard@example.com/autoboard_dev",
-  });
+test("TypeScript consumers build fresh contracts first", () => {
+  const check = runJust(["--dry-run", "check"]);
+  assert.equal(check.status, 0, check.output);
+  expectInOrder(check.output, [
+    "pnpm check:contracts",
+    "pnpm build:contracts",
+    "pnpm check",
+  ]);
 
-  assert.notEqual(result.status, 0, result.output);
-  assert.match(result.output, /refusing to reset a non-loopback database/i);
-  assert.doesNotMatch(result.output, /docker compose up/);
-  assert.doesNotMatch(result.output, /mix ecto\.reset/);
+  const web = runJust(["--dry-run", "test-web"]);
+  assert.equal(web.status, 0, web.output);
+  expectInOrder(web.output, [
+    "pnpm build:contracts",
+    "--filter @autoboard/web test",
+  ]);
+
+  const coverage = runJust(["--dry-run", "coverage-typescript"]);
+  assert.equal(coverage.status, 0, coverage.output);
+  expectInOrder(coverage.output, [
+    "pnpm build:contracts",
+    "--filter @autoboard/contracts coverage",
+    "--filter @autoboard/web coverage",
+  ]);
+});
+
+test("workflow contains no legacy database, Elixir, or adapter lifecycle", async () => {
+  const source = await readFile(resolve(root, "justfile"), "utf8");
+  for (const legacy of [
+    "docker compose",
+    "mix ",
+    "ecto",
+    "build-mcp",
+    "test-mcp",
+    "db-up",
+    "probe-entrypoint",
+  ]) {
+    assert.doesNotMatch(source, new RegExp(legacy, "i"));
+  }
+});
+
+test("verification and Husky enforce the canonical quality gates", async () => {
+  const verify = runJust(["--dry-run", "verify"]);
+  assert.equal(verify.status, 0, verify.output);
+  for (const command of [
+    "just lint-go",
+    "scripts/check-go-coverage.mjs",
+    "--filter @autoboard/contracts coverage",
+    "--filter @autoboard/web coverage",
+  ]) {
+    assert.match(verify.output, new RegExp(command.replaceAll(".", "\\.")));
+  }
+
+  const lint = runJust(["--dry-run", "lint-go"]);
+  assert.equal(lint.status, 0, lint.output);
+  assert.match(lint.output, /\.tools\/bin\/golangci-lint config verify/);
+  assert.match(lint.output, /\.tools\/bin\/golangci-lint run \.\/\.\.\./);
+
+  const hook = await readFile(resolve(root, ".husky/pre-commit"), "utf8");
+  assert.equal(hook, "#!/usr/bin/env sh\njust pre-commit\n");
+
+  const version = await readFile(resolve(root, ".golangci-version"), "utf8");
+  assert.equal(version, "v2.12.2\n");
+
+  const goCoverage = await readFile(
+    resolve(root, "scripts/check-go-coverage.mjs"),
+    "utf8",
+  );
+  assert.match(goCoverage, /"-count=1"/);
+});
+
+test("agent and developer guidance preserve the coverage policy", async () => {
+  const agentGuidance = await readFile(resolve(root, "AGENTS.md"), "utf8");
+  for (const requirement of [
+    "80% overall",
+    "70% in every first-party package",
+    "80% for lines, statements, and functions",
+    "75% for branches",
+    "Generated contracts are the only exclusion",
+    "Do not lower a coverage threshold",
+    "just coverage-go",
+    "just coverage-typescript",
+    "just lint-go",
+    "just pre-commit",
+    "just verify",
+  ]) {
+    assert.match(agentGuidance, new RegExp(requirement));
+  }
+
+  const readme = await readFile(resolve(root, "README.md"), "utf8");
+  for (const command of [
+    "just coverage",
+    "just coverage-go",
+    "just coverage-typescript",
+    "just lint-go",
+    "just pre-commit",
+    "just verify",
+  ]) {
+    assert.match(readme, new RegExp(command));
+  }
 });

@@ -1,0 +1,59 @@
+{
+  "$ref": "#/definitions/ActivityEvent",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ActivityEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "event_type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "payload": {
+          "type": "object"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "ticket_id": {
+          "oneOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "event_type",
+        "actor",
+        "project_id",
+        "ticket_id",
+        "payload",
+        "inserted_at"
+      ],
+      "type": "object"
+    }
+  }
+}

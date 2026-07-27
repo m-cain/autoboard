@@ -1,5 +1,4 @@
 packages:
   - web
-  - mcp
   - packages/*
   - test/e2e

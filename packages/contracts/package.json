@@ -12,12 +12,16 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "build": "tsc -b",
     "generate": "tsc -b && node dist/generate-json-schema.js"
   },
+  "dependencies": {
+    "json-schema-to-ts": "^3.1.1"
+  },
   "devDependencies": {
     "@types/node": "^24.10.0",
-    "effect": "^3.22.0",
+    "@vitest/coverage-v8": "4.1.10",
     "typescript": "^7.0.0",
     "vitest": "^4.1.0"
   }

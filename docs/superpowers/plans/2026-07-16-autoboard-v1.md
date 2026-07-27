@@ -1,5 +1,9 @@
 # Autoboard v1 Implementation Plan
 
+> Historical: this Elixir/PostgreSQL/stdio design was superseded by the
+> single-daemon Go/SQLite/Streamable HTTP architecture in July 2026. See the
+> root README for current operation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a local, single-user project planner whose canonical Elixir/PostgreSQL state is mutated through a TypeScript MCP adapter and visualized through a strictly read-only React UI.

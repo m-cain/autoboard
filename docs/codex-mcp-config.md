@@ -1,30 +1,32 @@
 # Codex MCP configuration
 
-Build Autoboard and issue a Codex credential first:
+Install the local daemon first:
 
 ```bash
-docker compose up -d postgres
-(cd server && mix autoboard.setup)
-(cd server && mix autoboard.token.create --actor codex)
-corepack pnpm build
+just install
 ```
 
-Store the printed token outside this repository. Then configure a local stdio MCP server with an absolute adapter path and the private Unix socket/token values. In a Codex configuration file, the shape is:
+The installer registers its Streamable HTTP endpoint and narrowly adds these
+settings to the generated Autoboard table:
 
 ```toml
 [mcp_servers.autoboard]
-command = "node"
-args = ["/absolute/path/to/autoboard/mcp/dist/main.js"]
-env = { AUTOBOARD_SOCKET = "/absolute/path/to/autoboard/server/var/autoboard.sock", AUTOBOARD_TOKEN = "ab_replace_with_the_saved_token" }
+url = "http://127.0.0.1:4040/mcp"
 default_tools_approval_mode = "writes"
+required = false
 ```
 
-Start the local server separately:
+Open a new Codex task after installation. `just service-status` reports launchd
+state, fingerprints, paths, health, schema/MCP readiness, and the exact Codex
+registration. `just update-service` rebuilds from the recorded checkout,
+atomically replaces the service, and verifies it.
 
-```bash
-(cd server && _build/prod/rel/autoboard/bin/autoboard start)
-```
+Autoboard exposes 17 bounded tools and no generic command or SQL escape hatch.
+The server instructions reserve tickets assigned to `me` for the human, direct
+Codex to `list_actionable_tickets`, require fresh reads before
+revision-checked writes, and call for confirmation before broad
+reorganizations, project archival, or dependency removal.
 
-The v1 credential model is global: a token can access the entire board. A future project-scoped credential will keep the same MCP surface while the server filters project-rooted queries through its authorization context. The browser HTTP interface is loopback-only and read-only; all creates and edits go through MCP.
-
-The adapter’s own server instructions treat tickets assigned to `me` as reserved for the human. Codex should work from `list_actionable_tickets`, read the latest entity before revision-checked writes, and seek confirmation for broad reorganizations, project archival, or dependency removal. `default_tools_approval_mode = "writes"` makes that confirmation posture visible in Codex while still allowing direct writes after approval.
+The endpoint is local-only but has full write access to the board. It binds to
+`127.0.0.1` and applies MCP host and cross-origin protection; no token is stored
+in Codex configuration.

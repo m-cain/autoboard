@@ -1,0 +1,519 @@
+{
+  "$ref": "#/definitions/TicketDetail",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "ActivityEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "event_type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "payload": {
+          "type": "object"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "ticket_id": {
+          "oneOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "event_type",
+        "actor",
+        "project_id",
+        "ticket_id",
+        "payload",
+        "inserted_at"
+      ],
+      "type": "object"
+    },
+    "Attachment": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "byte_size": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "media_type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "original_filename": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "ticket_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "ticket_id",
+        "project_id",
+        "original_filename",
+        "media_type",
+        "byte_size",
+        "sha256",
+        "actor",
+        "inserted_at"
+      ],
+      "type": "object"
+    },
+    "Comment": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "body": {
+          "maxLength": 100000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "ticket_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "ticket_id",
+        "project_id",
+        "body",
+        "actor",
+        "inserted_at"
+      ],
+      "type": "object"
+    },
+    "Label": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "project_id"
+      ],
+      "type": "object"
+    },
+    "Project": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 8,
+          "minLength": 2,
+          "pattern": "^[A-Z][A-Z0-9]*$",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "active",
+            "archived"
+          ],
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "name",
+        "description",
+        "state",
+        "revision",
+        "inserted_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "Ticket": {
+      "additionalProperties": false,
+      "properties": {
+        "assignee": {
+          "enum": [
+            "unassigned",
+            "me",
+            "codex"
+          ],
+          "type": "string"
+        },
+        "attachment_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "comment_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "identifier": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "$ref": "#/definitions/Label"
+          },
+          "type": "array"
+        },
+        "parent_ticket_id": {
+          "oneOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "urgent"
+          ],
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "triage",
+            "backlog",
+            "ready",
+            "in_progress",
+            "done",
+            "canceled"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "identifier",
+        "project_id",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "assignee",
+        "revision",
+        "parent_ticket_id",
+        "labels",
+        "blocked",
+        "comment_count",
+        "attachment_count",
+        "inserted_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "TicketDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "items": {
+            "$ref": "#/definitions/ActivityEvent"
+          },
+          "type": "array"
+        },
+        "assignee": {
+          "enum": [
+            "unassigned",
+            "me",
+            "codex"
+          ],
+          "type": "string"
+        },
+        "attachment_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "attachments": {
+          "items": {
+            "$ref": "#/definitions/Attachment"
+          },
+          "type": "array"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "blocked_tickets": {
+          "items": {
+            "$ref": "#/definitions/Ticket"
+          },
+          "type": "array"
+        },
+        "blockers": {
+          "items": {
+            "$ref": "#/definitions/Ticket"
+          },
+          "type": "array"
+        },
+        "comment_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "comments": {
+          "items": {
+            "$ref": "#/definitions/Comment"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "identifier": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "inserted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "$ref": "#/definitions/Label"
+          },
+          "type": "array"
+        },
+        "parent": {
+          "oneOf": [
+            {
+              "$ref": "#/definitions/Ticket"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent_ticket_id": {
+          "oneOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "urgent"
+          ],
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/definitions/Project"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "triage",
+            "backlog",
+            "ready",
+            "in_progress",
+            "done",
+            "canceled"
+          ],
+          "type": "string"
+        },
+        "subtasks": {
+          "items": {
+            "$ref": "#/definitions/Ticket"
+          },
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "identifier",
+        "project_id",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "assignee",
+        "revision",
+        "parent_ticket_id",
+        "labels",
+        "blocked",
+        "comment_count",
+        "attachment_count",
+        "inserted_at",
+        "updated_at",
+        "project",
+        "parent",
+        "subtasks",
+        "blockers",
+        "blocked_tickets",
+        "comments",
+        "attachments",
+        "activity"
+      ],
+      "type": "object"
+    }
+  }
+}

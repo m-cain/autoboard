@@ -103,7 +103,7 @@ const detail: TicketDetail = {
 afterEach(cleanup);
 
 describe("TicketDetailPage", () => {
-  it("renders the complete read-only ticket detail with sanitized Markdown", () => {
+  it("renders the complete read-only ticket detail with sanitized Markdown", async () => {
     const { container } = render(
       <MemoryRouter>
         <TicketDetailPage ticket={detail} />
@@ -116,7 +116,7 @@ describe("TicketDetailPage", () => {
     expect(screen.getAllByText("codex")).not.toHaveLength(0);
     expect(screen.getByText("frontend")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Safe Markdown" }),
+      await screen.findByRole("heading", { name: "Safe Markdown" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "useful link" })).toHaveAttribute(
       "href",
@@ -137,7 +137,7 @@ describe("TicketDetailPage", () => {
       "href",
       "/tickets/AUTO-2",
     );
-    expect(screen.getByText("useful")).toBeInTheDocument();
+    expect(await screen.findByText("useful")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "notes.txt" })).toHaveAttribute(
       "href",
       "/api/v1/attachments/66666666-6666-4666-8666-666666666666",

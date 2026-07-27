@@ -1,7 +1,7 @@
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import {
-  ActivityEvent,
-  type ActivityEvent as ActivityEventType,
+  decodeBrowserActivityEvent,
+  type BrowserActivityEvent,
 } from "@autoboard/contracts";
 
 export type EventSourceLike = {
@@ -26,15 +26,12 @@ export type ActivityStreamOptions = {
   readonly lastEventId?: number;
 };
 
-const decodeActivity = Schema.decodeUnknownSync(
-  ActivityEvent as unknown as Schema.Schema<ActivityEventType, unknown, never>,
-);
 const eventUrl = (endpoint: string, lastEventId: number) =>
   `${endpoint}${endpoint.includes("?") ? "&" : "?"}last_event_id=${encodeURIComponent(String(lastEventId))}`;
 
 export const activityStream = (
   options: ActivityStreamOptions = {},
-): Stream.Stream<ActivityEventType> =>
+): Stream.Stream<BrowserActivityEvent> =>
   Stream.async((emit) => {
     const createEventSource =
       options.createEventSource ??
@@ -67,7 +64,7 @@ export const activityStream = (
       const onActivity = (message: MessageEvent<string>) => {
         if (closed || active !== source) return;
         try {
-          const decoded = decodeActivity(JSON.parse(message.data));
+          const decoded = decodeBrowserActivityEvent(JSON.parse(message.data));
           const reportedId =
             message.lastEventId === ""
               ? undefined
