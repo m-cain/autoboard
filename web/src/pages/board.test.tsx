@@ -77,6 +77,7 @@ describe("project pages", () => {
       "href",
       "/projects/AUTO",
     );
+    expect(screen.getAllByText("Codex")).toHaveLength(2);
     expect(
       screen.getByRole("heading", { name: "Archived projects" }),
     ).toBeInTheDocument();
@@ -125,6 +126,7 @@ describe("project pages", () => {
     expect(
       screen.getByRole("link", { name: "Canceled tickets" }),
     ).toHaveAttribute("href", "/projects/AUTO/canceled");
+    expect(screen.getAllByText("Codex")).not.toHaveLength(0);
   });
 
   it("renders a clear empty board state", () => {

@@ -24,7 +24,7 @@ const summary = (
   priority: "high",
   assignee: "codex",
   revision: 2,
-  created_attribution: { performed_by: "codex", initiated_by: "codex" },
+  created_attribution: { performed_by: "codex", initiated_by: "me" },
   parent_ticket_id: null,
   labels: [],
   blocked: false,
@@ -115,7 +115,9 @@ describe("TicketDetailPage", () => {
     expect(
       screen.getByRole("heading", { name: "Render the real ticket" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("codex")).not.toHaveLength(0);
+    expect(screen.getAllByText("Codex")).toHaveLength(2);
+    expect(screen.getByText("me")).toBeInTheDocument();
+    expect(screen.getByText("me via Codex")).toBeInTheDocument();
     expect(screen.getByText("frontend")).toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { name: "Safe Markdown" }),
@@ -144,6 +146,7 @@ describe("TicketDetailPage", () => {
       "href",
       "/api/v1/attachments/66666666-6666-4666-8666-666666666666",
     );
+    expect(screen.getAllByText("Codex")).toHaveLength(2);
     expect(container.textContent).not.toContain("managed_path");
     expect(screen.getByText("ticket.updated")).toBeInTheDocument();
     expect(

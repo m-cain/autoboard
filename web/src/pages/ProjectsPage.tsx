@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import type { Project } from "@autoboard/contracts";
+import { AttributionLabel } from "../components/AttributionLabel.js";
 
 const ProjectList = ({
   projects,
@@ -15,6 +16,7 @@ const ProjectList = ({
           <Link to={`/projects/${encodeURIComponent(project.key)}`}>
             <strong>{project.name}</strong>
             <span>{project.key}</span>
+            <AttributionLabel attribution={project.created_attribution} />
           </Link>
         </li>
       ))}

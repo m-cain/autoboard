@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router";
 import type { TicketSummary } from "@autoboard/contracts";
 import { saveBoardSnapshot } from "../boardState.js";
+import { AttributionLabel } from "./AttributionLabel.js";
 
 export const TicketCard = ({ ticket }: { readonly ticket: TicketSummary }) => {
   const location = useLocation();
@@ -48,6 +49,7 @@ export const TicketCard = ({ ticket }: { readonly ticket: TicketSummary }) => {
       <div className="ticket-card__meta" aria-label="Ticket metadata">
         <span>{ticket.assignee}</span>
         <span>{ticket.priority}</span>
+        <AttributionLabel attribution={ticket.created_attribution} />
       </div>
       {ticket.blocked ? (
         <p className="ticket-card__blocked">

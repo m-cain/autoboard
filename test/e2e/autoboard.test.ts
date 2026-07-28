@@ -33,6 +33,7 @@ let page: Page;
 const tool = async <T>(
   name: string,
   args: Record<string, unknown>,
+  initiatedBy: "me" | "codex" = "me",
 ): Promise<T> => {
   if (
     new Set([
@@ -49,7 +50,7 @@ const tool = async <T>(
       "remove_dependency",
     ]).has(name)
   ) {
-    args.initiated_by = "me";
+    args.initiated_by = initiatedBy;
   }
   const result = await client.callTool({ name, arguments: args });
   expect(result.isError).not.toBe(true);
@@ -145,12 +146,16 @@ describe("Autoboard MCP to browser acceptance", () => {
       status: "ready",
       assignee: "codex",
     });
-    const codex = await tool<Ticket>("create_ticket", {
-      project_id: project.id,
-      title: "Codex leaf",
-      status: "ready",
-      assignee: "codex",
-    });
+    const codex = await tool<Ticket>(
+      "create_ticket",
+      {
+        project_id: project.id,
+        title: "Codex leaf",
+        status: "ready",
+        assignee: "codex",
+      },
+      "codex",
+    );
     const human = await tool<Ticket>("create_ticket", {
       project_id: project.id,
       title: "Human work",
@@ -260,6 +265,12 @@ describe("Autoboard MCP to browser acceptance", () => {
     await page
       .getByText("Codex leaf", { exact: true })
       .waitFor({ state: "visible" });
+    await page.getByText("me via Codex", { exact: true }).first().waitFor({
+      state: "visible",
+    });
+    await page.getByText("Codex", { exact: true }).first().waitFor({
+      state: "visible",
+    });
     await page.getByText("Subtask", { exact: true }).click();
     await page
       .getByText("A durable MCP comment.", { exact: true })

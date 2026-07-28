@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { Link } from "react-router";
 import type { ProjectBoard, TicketSummary } from "@autoboard/contracts";
+import { AttributionLabel } from "../components/AttributionLabel.js";
 import { TicketCard } from "../components/TicketCard.js";
 import type { BoardSnapshot } from "../boardState.js";
 
@@ -59,6 +60,7 @@ export const ProjectBoardPage = ({
         <div>
           <p className="eyebrow">{board.project.key}</p>
           <h1>{board.project.name}</h1>
+          <AttributionLabel attribution={board.project.created_attribution} />
         </div>
         <Link
           to={`/projects/${encodeURIComponent(board.project.key)}/canceled`}

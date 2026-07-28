@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router";
 import type { TicketDetail, TicketSummary } from "@autoboard/contracts";
 import { ActivityTimeline } from "../components/ActivityTimeline.js";
+import { AttributionLabel } from "../components/AttributionLabel.js";
 import { Markdown } from "../components/Markdown.js";
 
 const ticketPath = (identifier: string) =>
@@ -88,6 +89,12 @@ export const TicketDetailPage = ({
             <dt>Blocking</dt>
             <dd>{ticket.blocked ? "Blocked" : "Not blocked"}</dd>
           </div>
+          <div>
+            <dt>Created by</dt>
+            <dd>
+              <AttributionLabel attribution={ticket.created_attribution} />
+            </dd>
+          </div>
         </dl>
         {ticket.labels.length > 0 ? (
           <ul className="label-list" aria-label="Labels">
@@ -144,24 +151,17 @@ export const TicketDetailPage = ({
           <p className="empty-state">No comments yet</p>
         ) : (
           <ol className="comment-list">
-            {ticket.comments.map(
-              (comment: {
-                readonly id: string;
-                readonly attribution: { readonly performed_by: string };
-                readonly inserted_at: string;
-                readonly body: string;
-              }) => (
-                <li key={comment.id}>
-                  <p className="comment-meta">
-                    {comment.attribution.performed_by} ·{" "}
-                    <time dateTime={comment.inserted_at}>
-                      {new Date(comment.inserted_at).toLocaleString()}
-                    </time>
-                  </p>
-                  <Markdown>{comment.body}</Markdown>
-                </li>
-              ),
-            )}
+            {ticket.comments.map((comment) => (
+              <li key={comment.id}>
+                <p className="comment-meta">
+                  <AttributionLabel attribution={comment.attribution} /> ·{" "}
+                  <time dateTime={comment.inserted_at}>
+                    {new Date(comment.inserted_at).toLocaleString()}
+                  </time>
+                </p>
+                <Markdown>{comment.body}</Markdown>
+              </li>
+            ))}
           </ol>
         )}
       </section>
@@ -171,26 +171,20 @@ export const TicketDetailPage = ({
           <p className="empty-state">No attachments</p>
         ) : (
           <ul className="attachment-list">
-            {ticket.attachments.map(
-              (attachment: {
-                readonly id: string;
-                readonly original_filename: string;
-                readonly media_type: string;
-                readonly byte_size: number;
-              }) => (
-                <li key={attachment.id}>
-                  <a
-                    href={`/api/v1/attachments/${encodeURIComponent(attachment.id)}`}
-                  >
-                    {attachment.original_filename}
-                  </a>
-                  <span>
-                    {attachment.media_type} ·{" "}
-                    {attachment.byte_size.toLocaleString()} bytes
-                  </span>
-                </li>
-              ),
-            )}
+            {ticket.attachments.map((attachment) => (
+              <li key={attachment.id}>
+                <a
+                  href={`/api/v1/attachments/${encodeURIComponent(attachment.id)}`}
+                >
+                  {attachment.original_filename}
+                </a>
+                <span>
+                  {attachment.media_type} ·{" "}
+                  {attachment.byte_size.toLocaleString()} bytes
+                </span>
+                <AttributionLabel attribution={attachment.attribution} />
+              </li>
+            ))}
           </ul>
         )}
       </section>

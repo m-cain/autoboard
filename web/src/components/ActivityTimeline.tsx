@@ -1,4 +1,5 @@
 import type { ActivityEvent } from "@autoboard/contracts";
+import { AttributionLabel } from "./AttributionLabel.js";
 
 const timestamp = (value: string) => new Date(value).toLocaleString();
 
@@ -16,7 +17,7 @@ export const ActivityTimeline = ({
         {activity.map((event) => (
           <li key={event.id}>
             <strong>{event.event_type}</strong>
-            <span>{event.attribution.performed_by}</span>
+            <AttributionLabel attribution={event.attribution} />
             <time dateTime={event.inserted_at}>
               {timestamp(event.inserted_at)}
             </time>
