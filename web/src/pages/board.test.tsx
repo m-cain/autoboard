@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 import type {
@@ -89,7 +89,13 @@ describe("project pages", () => {
 
   it("uses the fixed kanban order and exposes ticket signals", () => {
     const board: ProjectBoard = {
-      project: project("AUTO"),
+      project: {
+        ...project("AUTO"),
+        created_attribution: {
+          performed_by: "system",
+          initiated_by: "system",
+        },
+      },
       columns: {
         backlog: [ticket("AUTO-1", "backlog")],
         ready: [
@@ -99,6 +105,10 @@ describe("project pages", () => {
             blocked: true,
             comment_count: 2,
             attachment_count: 1,
+            created_attribution: {
+              performed_by: "codex",
+              initiated_by: "me",
+            },
           }),
         ],
         in_progress: [ticket("AUTO-3", "in_progress")],
@@ -116,6 +126,20 @@ describe("project pages", () => {
       "href",
       "/tickets/AUTO-2",
     );
+    expect(
+      within(
+        screen
+          .getByRole("heading", { name: "AUTO project" })
+          .closest(".page-heading")!,
+      ).getByLabelText("By system"),
+    ).toHaveTextContent("system");
+    expect(
+      within(
+        screen
+          .getByRole("link", { name: /Ticket AUTO-2/ })
+          .closest(".ticket-card")!,
+      ).getByLabelText("By me via Codex"),
+    ).toHaveTextContent("me via Codex");
     expect(screen.getByText("codex")).toBeInTheDocument();
     expect(screen.getByText("high")).toBeInTheDocument();
     expect(
@@ -126,7 +150,6 @@ describe("project pages", () => {
     expect(
       screen.getByRole("link", { name: "Canceled tickets" }),
     ).toHaveAttribute("href", "/projects/AUTO/canceled");
-    expect(screen.getAllByText("Codex")).not.toHaveLength(0);
   });
 
   it("renders a clear empty board state", () => {
