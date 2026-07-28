@@ -617,6 +617,37 @@ func TestRestoreIntegrationSnapshotsRestoresPreviousArtifacts(t *testing.T) {
 	}
 }
 
+func TestRestoreFilePreservesCurrentConfigWhenAtomicReplaceFails(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(configPath, []byte("current\n"), 0o600); err != nil {
+		t.Fatalf("write current config: %v", err)
+	}
+	originalRename := restoreFileRename
+	t.Cleanup(func() { restoreFileRename = originalRename })
+	restoreFileRename = func(string, string) error {
+		return errors.New("simulated atomic replace failure")
+	}
+
+	err := restoreFile(configPath, fileSnapshot{
+		exists:  true,
+		mode:    0o600,
+		content: []byte("previous\n"),
+	})
+	if err == nil {
+		t.Fatal("restore succeeded")
+	}
+	if content, readErr := os.ReadFile(configPath); readErr != nil || string(content) != "current\n" {
+		t.Errorf("config after failed restore = %q, %v", content, readErr)
+	}
+	temporaryFiles, globErr := filepath.Glob(filepath.Join(filepath.Dir(configPath), ".autoboard-config-rollback-*"))
+	if globErr != nil {
+		t.Fatalf("find rollback temporary files: %v", globErr)
+	}
+	if len(temporaryFiles) != 0 {
+		t.Errorf("rollback temporary files = %v, want none", temporaryFiles)
+	}
+}
+
 func TestLifecycleCommandsHandleAbsentInstallationSafely(t *testing.T) {
 	home := t.TempDir()
 	bin := t.TempDir()

@@ -350,6 +350,8 @@ type skillSnapshot struct {
 
 var swapSkillDirectories = atomicSwapDirectories
 
+var restoreFileRename = os.Rename
+
 func snapshotFile(path string) (fileSnapshot, error) {
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -378,10 +380,35 @@ func restoreFile(path string, snapshot fileSnapshot) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("restore parent for %s: %w", path, err)
 	}
-	if err := os.WriteFile(path, snapshot.content, snapshot.mode); err != nil {
+	if err := writeRestoredFileAtomic(path, snapshot.content, snapshot.mode); err != nil {
 		return fmt.Errorf("restore %s: %w", path, err)
 	}
 	return nil
+}
+
+func writeRestoredFileAtomic(path string, content []byte, mode os.FileMode) error {
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".autoboard-config-rollback-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if err := temporary.Chmod(mode.Perm()); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(content); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return restoreFileRename(temporaryPath, path)
 }
 
 func snapshotSkill(directory string) (skillSnapshot, error) {
