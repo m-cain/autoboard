@@ -136,6 +136,26 @@ func TestSkillManagerStatusReportsSkillStates(t *testing.T) {
 			},
 			want: SkillConflicting,
 		},
+		"conflicting socket skill file": {
+			setup: func(t *testing.T, destination string) {
+				t.Helper()
+				if runtime.GOOS == "windows" {
+					t.Skip("Unix-domain sockets are unavailable on Windows")
+				}
+				copySkillSource(t, destination)
+				skillPath := filepath.Join(destination, "SKILL.md")
+				if err := os.Remove(skillPath); err != nil {
+					t.Fatalf("remove destination skill file: %v", err)
+				}
+				t.Chdir(destination)
+				listener, err := net.Listen("unix", "SKILL.md")
+				if err != nil {
+					t.Fatalf("listen on skill socket: %v", err)
+				}
+				t.Cleanup(func() { _ = listener.Close() })
+			},
+			want: SkillConflicting,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			destination := filepath.Join(t.TempDir(), "autoboard")

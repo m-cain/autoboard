@@ -67,18 +67,18 @@ func (m SkillManager) Status() (SkillStatus, error) {
 	if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
 		return SkillConflicting, nil
 	}
-	owned, err := skillDirectoryOwned(m.DestinationDir)
-	if err != nil {
-		return "", err
-	}
-	if !owned {
-		return SkillConflicting, nil
-	}
 	conflicting, err := hasUnsafeSkillPath(m.DestinationDir)
 	if err != nil {
 		return "", err
 	}
 	if conflicting {
+		return SkillConflicting, nil
+	}
+	owned, err := skillDirectoryOwned(m.DestinationDir)
+	if err != nil {
+		return "", err
+	}
+	if !owned {
 		return SkillConflicting, nil
 	}
 	current, err := m.matchesSource()

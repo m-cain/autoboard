@@ -556,6 +556,9 @@ func TestRestoreIntegrationSnapshotsRestoresPreviousArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("snapshot config: %v", err)
 	}
+	if err := os.Chmod(configPath, 0o644); err != nil {
+		t.Fatalf("change config permissions: %v", err)
+	}
 	if err := os.WriteFile(configPath, []byte("changed\n"), 0o600); err != nil {
 		t.Fatalf("change config: %v", err)
 	}
@@ -564,6 +567,13 @@ func TestRestoreIntegrationSnapshotsRestoresPreviousArtifacts(t *testing.T) {
 	}
 	if content, err := os.ReadFile(configPath); err != nil || !bytes.Equal(content, originalConfig) {
 		t.Errorf("restored config = %q, %v", content, err)
+	}
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("stat restored config: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("restored config permissions = %v, want 0600", info.Mode().Perm())
 	}
 	missingConfigPath := filepath.Join(root, "missing-config.toml")
 	missingConfig, err := snapshotFile(missingConfigPath)
