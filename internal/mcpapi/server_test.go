@@ -311,7 +311,7 @@ func TestEveryWriteToolRejectsInvalidInitiatorWithoutMutation(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, invalid := range []map[string]any{
-			{}, {"initiated_by": "system"}, {"initiated_by": "unknown"}, {"initiated_by": 1}, {"unexpected": true},
+			{}, {"initiated_by": "system"}, {"initiated_by": "unknown"}, {"initiated_by": 1}, {"initiated_by": "me", "unexpected": true},
 		} {
 			args := maps.Clone(valid)
 			maps.Copy(args, invalid)
