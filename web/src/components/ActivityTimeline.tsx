@@ -16,7 +16,7 @@ export const ActivityTimeline = ({
         {activity.map((event) => (
           <li key={event.id}>
             <strong>{event.event_type}</strong>
-            <span>{event.actor}</span>
+            <span>{event.attribution.performed_by}</span>
             <time dateTime={event.inserted_at}>
               {timestamp(event.inserted_at)}
             </time>

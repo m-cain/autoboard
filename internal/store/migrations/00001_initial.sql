@@ -9,8 +9,11 @@ CREATE TABLE projects (
   state TEXT NOT NULL DEFAULT 'active' CHECK (state IN ('active', 'archived')),
   revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
   next_ticket_number INTEGER NOT NULL DEFAULT 1 CHECK (next_ticket_number > 0),
+  created_performed_by TEXT NOT NULL CHECK (created_performed_by IN ('me', 'codex', 'system')),
+  created_initiated_by TEXT NOT NULL CHECK (created_initiated_by IN ('me', 'codex', 'system')),
   inserted_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  CHECK ((created_performed_by = 'me' AND created_initiated_by = 'me') OR (created_performed_by = 'codex' AND created_initiated_by IN ('me', 'codex')) OR (created_performed_by = 'system' AND created_initiated_by = 'system'))
 );
 
 CREATE TABLE tickets (
@@ -27,10 +30,13 @@ CREATE TABLE tickets (
     CHECK (assignee IN ('unassigned', 'me', 'codex')),
   revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
   parent_ticket_id TEXT REFERENCES tickets(id) ON DELETE RESTRICT,
+  created_performed_by TEXT NOT NULL CHECK (created_performed_by IN ('me', 'codex', 'system')),
+  created_initiated_by TEXT NOT NULL CHECK (created_initiated_by IN ('me', 'codex', 'system')),
   inserted_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(project_id, number),
-  CHECK (parent_ticket_id IS NULL OR parent_ticket_id <> id)
+  CHECK (parent_ticket_id IS NULL OR parent_ticket_id <> id),
+  CHECK ((created_performed_by = 'me' AND created_initiated_by = 'me') OR (created_performed_by = 'codex' AND created_initiated_by IN ('me', 'codex')) OR (created_performed_by = 'system' AND created_initiated_by = 'system'))
 );
 
 CREATE INDEX tickets_project_id_status_idx ON tickets(project_id, status);
@@ -72,8 +78,10 @@ CREATE TABLE comments (
   ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,
   body TEXT NOT NULL CHECK (length(trim(body)) BETWEEN 1 AND 100000),
-  actor TEXT NOT NULL CHECK (actor IN ('me', 'codex', 'system')),
-  inserted_at TEXT NOT NULL
+  performed_by TEXT NOT NULL CHECK (performed_by IN ('me', 'codex', 'system')),
+  initiated_by TEXT NOT NULL CHECK (initiated_by IN ('me', 'codex', 'system')),
+  inserted_at TEXT NOT NULL,
+  CHECK ((performed_by = 'me' AND initiated_by = 'me') OR (performed_by = 'codex' AND initiated_by IN ('me', 'codex')) OR (performed_by = 'system' AND initiated_by = 'system'))
 );
 
 CREATE INDEX comments_ticket_id_inserted_at_idx
@@ -88,8 +96,10 @@ CREATE TABLE attachments (
   byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
   sha256 TEXT NOT NULL,
   managed_path TEXT NOT NULL UNIQUE,
-  actor TEXT NOT NULL CHECK (actor IN ('me', 'codex', 'system')),
-  inserted_at TEXT NOT NULL
+  performed_by TEXT NOT NULL CHECK (performed_by IN ('me', 'codex', 'system')),
+  initiated_by TEXT NOT NULL CHECK (initiated_by IN ('me', 'codex', 'system')),
+  inserted_at TEXT NOT NULL,
+  CHECK ((performed_by = 'me' AND initiated_by = 'me') OR (performed_by = 'codex' AND initiated_by IN ('me', 'codex')) OR (performed_by = 'system' AND initiated_by = 'system'))
 );
 
 CREATE INDEX attachments_ticket_id_inserted_at_idx
@@ -98,11 +108,13 @@ CREATE INDEX attachments_ticket_id_inserted_at_idx
 CREATE TABLE activity_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_type TEXT NOT NULL,
-  actor TEXT NOT NULL CHECK (actor IN ('me', 'codex', 'system')),
+  performed_by TEXT NOT NULL CHECK (performed_by IN ('me', 'codex', 'system')),
+  initiated_by TEXT NOT NULL CHECK (initiated_by IN ('me', 'codex', 'system')),
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,
   ticket_id TEXT REFERENCES tickets(id) ON DELETE RESTRICT,
   payload TEXT NOT NULL DEFAULT '{}',
-  inserted_at TEXT NOT NULL
+  inserted_at TEXT NOT NULL,
+  CHECK ((performed_by = 'me' AND initiated_by = 'me') OR (performed_by = 'codex' AND initiated_by IN ('me', 'codex')) OR (performed_by = 'system' AND initiated_by = 'system'))
 );
 
 CREATE INDEX activity_events_project_id_id_idx

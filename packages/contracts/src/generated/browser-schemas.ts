@@ -9,13 +9,8 @@ export const ActivityEventSchema = {
     "ActivityEvent": {
       "additionalProperties": false,
       "properties": {
-        "actor": {
-          "enum": [
-            "me",
-            "codex",
-            "system"
-          ],
-          "type": "string"
+        "attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "event_type": {
           "minLength": 1,
@@ -51,11 +46,37 @@ export const ActivityEventSchema = {
       "required": [
         "id",
         "event_type",
-        "actor",
+        "attribution",
         "project_id",
         "ticket_id",
         "payload",
         "inserted_at"
+      ],
+      "type": "object"
+    },
+    "Attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "initiated_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "performed_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "performed_by",
+        "initiated_by"
       ],
       "type": "object"
     }
@@ -66,6 +87,32 @@ export const ProjectBoardSchema = {
   "$ref": "#/definitions/ProjectBoard",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "Attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "initiated_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "performed_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "performed_by",
+        "initiated_by"
+      ],
+      "type": "object"
+    },
     "BoardColumns": {
       "additionalProperties": false,
       "properties": {
@@ -129,6 +176,9 @@ export const ProjectBoardSchema = {
     "Project": {
       "additionalProperties": false,
       "properties": {
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
+        },
         "description": {
           "type": "string"
         },
@@ -174,6 +224,7 @@ export const ProjectBoardSchema = {
         "description",
         "state",
         "revision",
+        "created_attribution",
         "inserted_at",
         "updated_at"
       ],
@@ -217,6 +268,9 @@ export const ProjectBoardSchema = {
           "minimum": 0,
           "type": "integer"
         },
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
+        },
         "description": {
           "type": "string"
         },
@@ -298,6 +352,7 @@ export const ProjectBoardSchema = {
         "priority",
         "assignee",
         "revision",
+        "created_attribution",
         "parent_ticket_id",
         "labels",
         "blocked",
@@ -315,9 +370,38 @@ export const ProjectListSchema = {
   "$ref": "#/definitions/ProjectList",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "Attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "initiated_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "performed_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "performed_by",
+        "initiated_by"
+      ],
+      "type": "object"
+    },
     "Project": {
       "additionalProperties": false,
       "properties": {
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
+        },
         "description": {
           "type": "string"
         },
@@ -363,6 +447,7 @@ export const ProjectListSchema = {
         "description",
         "state",
         "revision",
+        "created_attribution",
         "inserted_at",
         "updated_at"
       ],
@@ -400,13 +485,8 @@ export const TicketDetailSchema = {
     "ActivityEvent": {
       "additionalProperties": false,
       "properties": {
-        "actor": {
-          "enum": [
-            "me",
-            "codex",
-            "system"
-          ],
-          "type": "string"
+        "attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "event_type": {
           "minLength": 1,
@@ -442,7 +522,7 @@ export const TicketDetailSchema = {
       "required": [
         "id",
         "event_type",
-        "actor",
+        "attribution",
         "project_id",
         "ticket_id",
         "payload",
@@ -453,13 +533,8 @@ export const TicketDetailSchema = {
     "Attachment": {
       "additionalProperties": false,
       "properties": {
-        "actor": {
-          "enum": [
-            "me",
-            "codex",
-            "system"
-          ],
-          "type": "string"
+        "attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "byte_size": {
           "minimum": 0,
@@ -502,21 +577,42 @@ export const TicketDetailSchema = {
         "media_type",
         "byte_size",
         "sha256",
-        "actor",
+        "attribution",
         "inserted_at"
       ],
       "type": "object"
     },
-    "Comment": {
+    "Attribution": {
       "additionalProperties": false,
       "properties": {
-        "actor": {
+        "initiated_by": {
           "enum": [
             "me",
             "codex",
             "system"
           ],
           "type": "string"
+        },
+        "performed_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "performed_by",
+        "initiated_by"
+      ],
+      "type": "object"
+    },
+    "Comment": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "body": {
           "maxLength": 100000,
@@ -545,7 +641,7 @@ export const TicketDetailSchema = {
         "ticket_id",
         "project_id",
         "body",
-        "actor",
+        "attribution",
         "inserted_at"
       ],
       "type": "object"
@@ -577,6 +673,9 @@ export const TicketDetailSchema = {
     "Project": {
       "additionalProperties": false,
       "properties": {
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
+        },
         "description": {
           "type": "string"
         },
@@ -622,6 +721,7 @@ export const TicketDetailSchema = {
         "description",
         "state",
         "revision",
+        "created_attribution",
         "inserted_at",
         "updated_at"
       ],
@@ -648,6 +748,9 @@ export const TicketDetailSchema = {
         "comment_count": {
           "minimum": 0,
           "type": "integer"
+        },
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "description": {
           "type": "string"
@@ -730,6 +833,7 @@ export const TicketDetailSchema = {
         "priority",
         "assignee",
         "revision",
+        "created_attribution",
         "parent_ticket_id",
         "labels",
         "blocked",
@@ -791,6 +895,9 @@ export const TicketDetailSchema = {
             "$ref": "#/definitions/Comment"
           },
           "type": "array"
+        },
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "description": {
           "type": "string"
@@ -892,6 +999,7 @@ export const TicketDetailSchema = {
         "priority",
         "assignee",
         "revision",
+        "created_attribution",
         "parent_ticket_id",
         "labels",
         "blocked",
@@ -917,6 +1025,32 @@ export const TicketListSchema = {
   "$ref": "#/definitions/TicketList",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "Attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "initiated_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "performed_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "performed_by",
+        "initiated_by"
+      ],
+      "type": "object"
+    },
     "Label": {
       "additionalProperties": false,
       "properties": {
@@ -962,6 +1096,9 @@ export const TicketListSchema = {
         "comment_count": {
           "minimum": 0,
           "type": "integer"
+        },
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "description": {
           "type": "string"
@@ -1044,6 +1181,7 @@ export const TicketListSchema = {
         "priority",
         "assignee",
         "revision",
+        "created_attribution",
         "parent_ticket_id",
         "labels",
         "blocked",

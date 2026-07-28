@@ -34,6 +34,23 @@ const tool = async <T>(
   name: string,
   args: Record<string, unknown>,
 ): Promise<T> => {
+  if (
+    new Set([
+      "create_project",
+      "update_project",
+      "archive_project",
+      "restore_project",
+      "create_ticket",
+      "update_ticket",
+      "transition_ticket",
+      "add_comment",
+      "add_attachment_from_path",
+      "add_dependency",
+      "remove_dependency",
+    ]).has(name)
+  ) {
+    args.initiated_by = "me";
+  }
   const result = await client.callTool({ name, arguments: args });
   expect(result.isError).not.toBe(true);
   return result.structuredContent as T;
@@ -44,6 +61,11 @@ const failedTool = async (
   args: Record<string, unknown>,
   kind: string,
 ) => {
+  if (
+    new Set(["update_ticket", "add_dependency", "remove_dependency"]).has(name)
+  ) {
+    args.initiated_by = "me";
+  }
   const result = await client.callTool({ name, arguments: args });
   expect(result.isError).toBe(true);
   const text = result.content

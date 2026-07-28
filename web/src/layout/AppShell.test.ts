@@ -10,7 +10,10 @@ const ticketId = "22222222-2222-4222-8222-222222222222";
 const event: ActivityEvent = {
   id: 4,
   event_type: "ticket.updated",
-  actor: "codex",
+  attribution: {
+    performed_by: "codex" as const,
+    initiated_by: "codex" as const,
+  },
   project_id: projectId,
   ticket_id: ticketId,
   payload: {},
@@ -24,6 +27,10 @@ const projects = [
     description: "",
     state: "active" as const,
     revision: 1,
+    created_attribution: {
+      performed_by: "codex" as const,
+      initiated_by: "codex" as const,
+    },
     inserted_at: "2026-07-17T12:34:56Z",
     updated_at: "2026-07-17T12:34:56Z",
   },

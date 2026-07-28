@@ -10,21 +10,21 @@ import (
 func TestReadModelsListBoardSearchAndCanceled(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	active, err := service.CreateProject(ctx, app.CreateProjectInput{
+	active, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "AUTO",
 		Name: "Zulu",
 	})
 	if err != nil {
 		t.Fatalf("create active project: %v", err)
 	}
-	archived, err := service.CreateProject(ctx, app.CreateProjectInput{
+	archived, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "OLD",
 		Name: "Alpha",
 	})
 	if err != nil {
 		t.Fatalf("create archived project: %v", err)
 	}
-	archived, err = service.ArchiveProject(ctx, archived.ID, archived.Revision)
+	archived, err = service.ArchiveProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, archived.ID, archived.Revision)
 	if err != nil {
 		t.Fatalf("archive project: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestReadModelsListBoardSearchAndCanceled(t *testing.T) {
 func TestTicketDetailHydratesRelationshipsCountsAndActivity(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -104,15 +104,15 @@ func TestTicketDetailHydratesRelationshipsCountsAndActivity(t *testing.T) {
 	})
 	blocker := createTicket(t, service, project.ID, "Blocker")
 	blocked := createTicket(t, service, project.ID, "Blocked")
-	parent, err = service.AddDependency(ctx, parent.ID, blocker.ID, parent.Revision)
+	parent, err = service.AddDependency(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, parent.ID, blocker.ID, parent.Revision)
 	if err != nil {
 		t.Fatalf("add parent dependency: %v", err)
 	}
-	_, err = service.AddDependency(ctx, blocked.ID, parent.ID, blocked.Revision)
+	_, err = service.AddDependency(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, blocked.ID, parent.ID, blocked.Revision)
 	if err != nil {
 		t.Fatalf("add blocked dependency: %v", err)
 	}
-	_, parent, err = service.AddComment(ctx, parent.ID, "A note")
+	_, parent, err = service.AddComment(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, parent.ID, "A note")
 	if err != nil {
 		t.Fatalf("add comment: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestTicketDetailHydratesRelationshipsCountsAndActivity(t *testing.T) {
 func TestActionableTicketsExcludeBlockedAndParentWork(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -172,6 +172,7 @@ func TestActionableTicketsExcludeBlockedAndParentWork(t *testing.T) {
 	})
 	if _, err := service.AddDependency(
 		ctx,
+		app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex},
 		blocked.ID,
 		blocker.ID,
 		blocked.Revision,
@@ -207,7 +208,7 @@ func createTicketWithInput(
 	input app.CreateTicketInput,
 ) app.Ticket {
 	t.Helper()
-	ticket, err := service.CreateTicket(context.Background(), input)
+	ticket, err := service.CreateTicket(context.Background(), app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, input)
 	if err != nil {
 		t.Fatalf("create ticket %q: %v", input.Title, err)
 	}

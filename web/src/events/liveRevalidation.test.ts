@@ -7,7 +7,7 @@ const projectId = "11111111-1111-4111-8111-111111111111";
 const event = (id: number, idProject = projectId): ActivityEvent => ({
   id,
   event_type: "ticket.updated",
-  actor: "codex",
+  attribution: { performed_by: "codex", initiated_by: "codex" },
   project_id: idProject,
   ticket_id: null,
   payload: {},

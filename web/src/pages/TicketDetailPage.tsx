@@ -147,13 +147,13 @@ export const TicketDetailPage = ({
             {ticket.comments.map(
               (comment: {
                 readonly id: string;
-                readonly actor: string;
+                readonly attribution: { readonly performed_by: string };
                 readonly inserted_at: string;
                 readonly body: string;
               }) => (
                 <li key={comment.id}>
                   <p className="comment-meta">
-                    {comment.actor} ·{" "}
+                    {comment.attribution.performed_by} ·{" "}
                     <time dateTime={comment.inserted_at}>
                       {new Date(comment.inserted_at).toLocaleString()}
                     </time>

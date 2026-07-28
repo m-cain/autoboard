@@ -11,18 +11,18 @@ import (
 func TestAddCommentAppendsAndAdvancesTicketRevision(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	ticket := createTicket(t, service, project.ID, "Commented")
 
-	comment, ticket, err := service.AddComment(ctx, ticket.ID, "A useful note")
+	comment, ticket, err := service.AddComment(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, ticket.ID, "A useful note")
 	if err != nil {
 		t.Fatalf("add comment: %v", err)
 	}
 	if comment.Body != "A useful note" ||
-		comment.Actor != app.ActorCodex ||
+		comment.Attribution != (app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}) ||
 		comment.TicketID != ticket.ID ||
 		comment.ProjectID != project.ID {
 		t.Errorf("comment = %#v", comment)
@@ -42,22 +42,22 @@ func TestAddCommentAppendsAndAdvancesTicketRevision(t *testing.T) {
 func TestAddCommentRejectsBlankAndArchivedProject(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	ticket := createTicket(t, service, project.ID, "Commented")
 
-	_, _, err = service.AddComment(ctx, ticket.ID, " \n\t ")
+	_, _, err = service.AddComment(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, ticket.ID, " \n\t ")
 	var domainErr *app.Error
 	if !errors.As(err, &domainErr) || domainErr.Kind != app.ErrorValidationFailed {
 		t.Fatalf("blank comment error = %v, want validation_failed", err)
 	}
-	_, err = service.ArchiveProject(ctx, project.ID, project.Revision)
+	_, err = service.ArchiveProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, project.ID, project.Revision)
 	if err != nil {
 		t.Fatalf("archive project: %v", err)
 	}
-	_, _, err = service.AddComment(ctx, ticket.ID, "Nope")
+	_, _, err = service.AddComment(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, ticket.ID, "Nope")
 	if !errors.As(err, &domainErr) || domainErr.Kind != app.ErrorInvalidTransition {
 		t.Fatalf("archived comment error = %v, want invalid_transition", err)
 	}

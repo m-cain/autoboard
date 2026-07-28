@@ -214,7 +214,7 @@ func TestToolErrorsAreRepairableAndInvalidInputNeverMutates(t *testing.T) {
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: "update_project",
 		Arguments: map[string]any{
-			"project_id": project.ID, "expected_revision": 99, "name": "Stale",
+			"project_id": project.ID, "expected_revision": 99, "name": "Stale", "initiated_by": "me",
 		},
 	})
 	if err != nil {
@@ -299,6 +299,14 @@ func call[T any](
 	arguments map[string]any,
 ) T {
 	t.Helper()
+	if map[string]bool{
+		"create_project": true, "update_project": true, "archive_project": true,
+		"restore_project": true, "create_ticket": true, "update_ticket": true,
+		"transition_ticket": true, "add_comment": true, "add_attachment_from_path": true,
+		"add_dependency": true, "remove_dependency": true,
+	}[name] {
+		arguments["initiated_by"] = "me"
+	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{
 		Name: name, Arguments: arguments,
 	})

@@ -28,14 +28,6 @@ const (
 	ProjectArchived ProjectState = "archived"
 )
 
-type Actor string
-
-const (
-	ActorMe     Actor = "me"
-	ActorCodex  Actor = "codex"
-	ActorSystem Actor = "system"
-)
-
 type Config struct {
 	DatabasePath       string
 	DataDir            string
@@ -43,24 +35,25 @@ type Config struct {
 }
 
 type Project struct {
-	ID          string       `json:"id" jsonschema_extras:"format=uuid"`
-	Key         string       `json:"key" jsonschema_extras:"pattern=^[A-Z][A-Z0-9]*$,minLength=2,maxLength=8"`
-	Name        string       `json:"name" jsonschema_extras:"minLength=1,maxLength=200"`
-	Description string       `json:"description"`
-	State       ProjectState `json:"state" jsonschema_extras:"enum=active,enum=archived"`
-	Revision    int          `json:"revision" jsonschema_extras:"minimum=1"`
-	InsertedAt  time.Time    `json:"inserted_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
+	ID                 string       `json:"id" jsonschema_extras:"format=uuid"`
+	Key                string       `json:"key" jsonschema_extras:"pattern=^[A-Z][A-Z0-9]*$,minLength=2,maxLength=8"`
+	Name               string       `json:"name" jsonschema_extras:"minLength=1,maxLength=200"`
+	Description        string       `json:"description"`
+	State              ProjectState `json:"state" jsonschema_extras:"enum=active,enum=archived"`
+	Revision           int          `json:"revision" jsonschema_extras:"minimum=1"`
+	CreatedAttribution Attribution  `json:"created_attribution"`
+	InsertedAt         time.Time    `json:"inserted_at"`
+	UpdatedAt          time.Time    `json:"updated_at"`
 }
 
 type ActivityEvent struct {
-	ID         int64          `json:"id" jsonschema_extras:"minimum=1"`
-	EventType  string         `json:"event_type" jsonschema_extras:"minLength=1"`
-	Actor      Actor          `json:"actor" jsonschema_extras:"enum=me,enum=codex,enum=system"`
-	ProjectID  string         `json:"project_id" jsonschema_extras:"format=uuid"`
-	TicketID   *string        `json:"ticket_id" jsonschema:"nullable" jsonschema_extras:"format=uuid"`
-	Payload    map[string]any `json:"payload"`
-	InsertedAt time.Time      `json:"inserted_at"`
+	ID          int64          `json:"id" jsonschema_extras:"minimum=1"`
+	EventType   string         `json:"event_type" jsonschema_extras:"minLength=1"`
+	Attribution Attribution    `json:"attribution"`
+	ProjectID   string         `json:"project_id" jsonschema_extras:"format=uuid"`
+	TicketID    *string        `json:"ticket_id" jsonschema:"nullable" jsonschema_extras:"format=uuid"`
+	Payload     map[string]any `json:"payload"`
+	InsertedAt  time.Time      `json:"inserted_at"`
 }
 
 type CreateProjectInput struct {
@@ -99,22 +92,23 @@ const (
 )
 
 type Ticket struct {
-	ID              string       `json:"id" jsonschema_extras:"format=uuid"`
-	Identifier      string       `json:"identifier" jsonschema_extras:"minLength=1"`
-	ProjectID       string       `json:"project_id" jsonschema_extras:"format=uuid"`
-	Title           string       `json:"title" jsonschema_extras:"minLength=1,maxLength=500"`
-	Description     string       `json:"description"`
-	Status          TicketStatus `json:"status" jsonschema_extras:"enum=triage,enum=backlog,enum=ready,enum=in_progress,enum=done,enum=canceled"`
-	Priority        Priority     `json:"priority" jsonschema_extras:"enum=none,enum=low,enum=medium,enum=high,enum=urgent"`
-	Assignee        Assignee     `json:"assignee" jsonschema_extras:"enum=unassigned,enum=me,enum=codex"`
-	Revision        int          `json:"revision" jsonschema_extras:"minimum=1"`
-	ParentTicketID  *string      `json:"parent_ticket_id" jsonschema:"nullable" jsonschema_extras:"format=uuid"`
-	Labels          []Label      `json:"labels"`
-	Blocked         bool         `json:"blocked"`
-	CommentCount    int          `json:"comment_count" jsonschema_extras:"minimum=0"`
-	AttachmentCount int          `json:"attachment_count" jsonschema_extras:"minimum=0"`
-	InsertedAt      time.Time    `json:"inserted_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
+	ID                 string       `json:"id" jsonschema_extras:"format=uuid"`
+	Identifier         string       `json:"identifier" jsonschema_extras:"minLength=1"`
+	ProjectID          string       `json:"project_id" jsonschema_extras:"format=uuid"`
+	Title              string       `json:"title" jsonschema_extras:"minLength=1,maxLength=500"`
+	Description        string       `json:"description"`
+	Status             TicketStatus `json:"status" jsonschema_extras:"enum=triage,enum=backlog,enum=ready,enum=in_progress,enum=done,enum=canceled"`
+	Priority           Priority     `json:"priority" jsonschema_extras:"enum=none,enum=low,enum=medium,enum=high,enum=urgent"`
+	Assignee           Assignee     `json:"assignee" jsonschema_extras:"enum=unassigned,enum=me,enum=codex"`
+	Revision           int          `json:"revision" jsonschema_extras:"minimum=1"`
+	CreatedAttribution Attribution  `json:"created_attribution"`
+	ParentTicketID     *string      `json:"parent_ticket_id" jsonschema:"nullable" jsonschema_extras:"format=uuid"`
+	Labels             []Label      `json:"labels"`
+	Blocked            bool         `json:"blocked"`
+	CommentCount       int          `json:"comment_count" jsonschema_extras:"minimum=0"`
+	AttachmentCount    int          `json:"attachment_count" jsonschema_extras:"minimum=0"`
+	InsertedAt         time.Time    `json:"inserted_at"`
+	UpdatedAt          time.Time    `json:"updated_at"`
 }
 
 type Label struct {
@@ -177,8 +171,12 @@ func (s *Service) Close() error {
 
 func (s *Service) CreateProject(
 	ctx context.Context,
+	attribution Attribution,
 	input CreateProjectInput,
 ) (Project, error) {
+	if err := attribution.Validate(); err != nil {
+		return Project{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -208,14 +206,15 @@ func (s *Service) CreateProject(
 
 	now := time.Now().UTC()
 	project := Project{
-		ID:          uuid.NewString(),
-		Key:         key,
-		Name:        name,
-		Description: input.Description,
-		State:       ProjectActive,
-		Revision:    1,
-		InsertedAt:  now,
-		UpdatedAt:   now,
+		ID:                 uuid.NewString(),
+		Key:                key,
+		Name:               name,
+		Description:        input.Description,
+		State:              ProjectActive,
+		Revision:           1,
+		CreatedAttribution: attribution,
+		InsertedAt:         now,
+		UpdatedAt:          now,
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -237,14 +236,16 @@ func (s *Service) CreateProject(
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO projects
-		 (id, key, name, description, state, revision, next_ticket_number, inserted_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+		 (id, key, name, description, state, revision, next_ticket_number, created_performed_by, created_initiated_by, inserted_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
 		project.ID,
 		project.Key,
 		project.Name,
 		project.Description,
 		project.State,
 		project.Revision,
+		project.CreatedAttribution.PerformedBy,
+		project.CreatedAttribution.InitiatedBy,
 		formatTime(project.InsertedAt),
 		formatTime(project.UpdatedAt),
 	); err != nil {
@@ -260,9 +261,10 @@ func (s *Service) CreateProject(
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO activity_events
-		 (event_type, actor, project_id, ticket_id, payload, inserted_at)
-		 VALUES ('project.created', ?, ?, NULL, ?, ?)`,
-		ActorCodex,
+		 (event_type, performed_by, initiated_by, project_id, ticket_id, payload, inserted_at)
+		 VALUES ('project.created', ?, ?, ?, NULL, ?, ?)`,
+		attribution.PerformedBy,
+		attribution.InitiatedBy,
 		project.ID,
 		string(payload),
 		formatTime(now),
@@ -277,8 +279,12 @@ func (s *Service) CreateProject(
 
 func (s *Service) CreateTicket(
 	ctx context.Context,
+	attribution Attribution,
 	input CreateTicketInput,
 ) (Ticket, error) {
+	if err := attribution.Validate(); err != nil {
+		return Ticket{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -360,25 +366,26 @@ func (s *Service) CreateTicket(
 	}
 
 	ticket := Ticket{
-		ID:             uuid.NewString(),
-		Identifier:     fmt.Sprintf("%s-%d", projectKey, number),
-		ProjectID:      input.ProjectID,
-		Title:          title,
-		Description:    input.Description,
-		Status:         input.Status,
-		Priority:       input.Priority,
-		Assignee:       input.Assignee,
-		Revision:       1,
-		ParentTicketID: input.ParentTicketID,
-		InsertedAt:     now,
-		UpdatedAt:      now,
+		ID:                 uuid.NewString(),
+		Identifier:         fmt.Sprintf("%s-%d", projectKey, number),
+		ProjectID:          input.ProjectID,
+		Title:              title,
+		Description:        input.Description,
+		Status:             input.Status,
+		Priority:           input.Priority,
+		Assignee:           input.Assignee,
+		Revision:           1,
+		CreatedAttribution: attribution,
+		ParentTicketID:     input.ParentTicketID,
+		InsertedAt:         now,
+		UpdatedAt:          now,
 	}
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO tickets
 		 (id, project_id, number, title, description, status, priority, assignee,
-		  revision, parent_ticket_id, inserted_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  revision, parent_ticket_id, created_performed_by, created_initiated_by, inserted_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ticket.ID,
 		ticket.ProjectID,
 		number,
@@ -389,6 +396,8 @@ func (s *Service) CreateTicket(
 		ticket.Assignee,
 		ticket.Revision,
 		ticket.ParentTicketID,
+		ticket.CreatedAttribution.PerformedBy,
+		ticket.CreatedAttribution.InitiatedBy,
 		formatTime(ticket.InsertedAt),
 		formatTime(ticket.UpdatedAt),
 	); err != nil {
@@ -420,9 +429,10 @@ func (s *Service) CreateTicket(
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO activity_events
-		 (event_type, actor, project_id, ticket_id, payload, inserted_at)
-		 VALUES ('ticket.created', ?, ?, ?, ?, ?)`,
-		ActorCodex,
+		 (event_type, performed_by, initiated_by, project_id, ticket_id, payload, inserted_at)
+		 VALUES ('ticket.created', ?, ?, ?, ?, ?, ?)`,
+		attribution.PerformedBy,
+		attribution.InitiatedBy,
 		ticket.ProjectID,
 		ticket.ID,
 		string(payload),
@@ -442,7 +452,7 @@ func (s *Service) ListActivityAfter(
 ) ([]ActivityEvent, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, event_type, actor, project_id, ticket_id, payload, inserted_at
+		`SELECT id, event_type, performed_by, initiated_by, project_id, ticket_id, payload, inserted_at
 		 FROM activity_events
 		 WHERE id > ?
 		 ORDER BY id`,
@@ -461,7 +471,8 @@ func (s *Service) ListActivityAfter(
 		if err := rows.Scan(
 			&event.ID,
 			&event.EventType,
-			&event.Actor,
+			&event.Attribution.PerformedBy,
+			&event.Attribution.InitiatedBy,
 			&event.ProjectID,
 			&event.TicketID,
 			&payload,
@@ -503,7 +514,7 @@ func (s *Service) ListActivityPage(
 ) ([]ActivityEvent, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, event_type, actor, project_id, ticket_id, payload, inserted_at
+		`SELECT id, event_type, performed_by, initiated_by, project_id, ticket_id, payload, inserted_at
 		 FROM activity_events
 		 WHERE id > ? AND id <= ?
 		 ORDER BY id

@@ -20,7 +20,7 @@ import (
 func TestReadAPIProjectsBoardTicketAndNoWrites(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "HTTP",
 		Name: "HTTP project",
 	})
@@ -103,7 +103,7 @@ func TestReadAPIProjectsBoardTicketAndNoWrites(t *testing.T) {
 func TestReadAPIErrorsAndAttachmentDownload(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "HTTP",
 		Name: "HTTP project",
 	})
@@ -118,7 +118,7 @@ func TestReadAPIErrorsAndAttachmentDownload(t *testing.T) {
 	if err := os.WriteFile(source, []byte("download me"), 0o600); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	attachment, _, err := service.AddAttachmentFromPath(ctx, ticket.ID, source)
+	attachment, _, err := service.AddAttachmentFromPath(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, ticket.ID, source)
 	if err != nil {
 		t.Fatalf("add attachment: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestReadAPIErrorsAndAttachmentDownload(t *testing.T) {
 func TestSSEReplaysActivityAndRejectsInvalidCursors(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "SSE",
 		Name: "SSE project",
 	})
@@ -332,7 +332,7 @@ func createTicket(
 	input app.CreateTicketInput,
 ) app.Ticket {
 	t.Helper()
-	ticket, err := service.CreateTicket(context.Background(), input)
+	ticket, err := service.CreateTicket(context.Background(), app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, input)
 	if err != nil {
 		t.Fatalf("create ticket %q: %v", input.Title, err)
 	}

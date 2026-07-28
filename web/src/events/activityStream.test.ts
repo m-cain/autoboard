@@ -5,7 +5,7 @@ import { activityStream, type EventSourceLike } from "./activityStream.js";
 const event = {
   id: 12,
   event_type: "ticket.updated",
-  actor: "codex" as const,
+  attribution: { performed_by: "codex", initiated_by: "codex" } as const,
   project_id: "11111111-1111-4111-8111-111111111111",
   ticket_id: "22222222-2222-4222-8222-222222222222",
   payload: { changed: ["status"] },

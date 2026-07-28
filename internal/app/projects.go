@@ -18,10 +18,14 @@ type UpdateProjectInput struct {
 
 func (s *Service) UpdateProject(
 	ctx context.Context,
+	attribution Attribution,
 	projectID string,
 	expectedRevision int,
 	input UpdateProjectInput,
 ) (Project, error) {
+	if err := attribution.Validate(); err != nil {
+		return Project{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -104,6 +108,7 @@ func (s *Service) UpdateProject(
 	if err := insertActivity(
 		ctx,
 		tx,
+		attribution,
 		"project.updated",
 		project.ID,
 		nil,
@@ -120,11 +125,13 @@ func (s *Service) UpdateProject(
 
 func (s *Service) ArchiveProject(
 	ctx context.Context,
+	attribution Attribution,
 	projectID string,
 	expectedRevision int,
 ) (Project, error) {
 	return s.changeProjectState(
 		ctx,
+		attribution,
 		projectID,
 		expectedRevision,
 		ProjectActive,
@@ -135,11 +142,13 @@ func (s *Service) ArchiveProject(
 
 func (s *Service) RestoreProject(
 	ctx context.Context,
+	attribution Attribution,
 	projectID string,
 	expectedRevision int,
 ) (Project, error) {
 	return s.changeProjectState(
 		ctx,
+		attribution,
 		projectID,
 		expectedRevision,
 		ProjectArchived,
@@ -150,12 +159,16 @@ func (s *Service) RestoreProject(
 
 func (s *Service) changeProjectState(
 	ctx context.Context,
+	attribution Attribution,
 	projectID string,
 	expectedRevision int,
 	from ProjectState,
 	to ProjectState,
 	eventType string,
 ) (Project, error) {
+	if err := attribution.Validate(); err != nil {
+		return Project{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -196,6 +209,7 @@ func (s *Service) changeProjectState(
 	if err := insertActivity(
 		ctx,
 		tx,
+		attribution,
 		eventType,
 		project.ID,
 		nil,
@@ -228,7 +242,7 @@ func loadProject(
 	var updatedAt string
 	err := query.QueryRowContext(
 		ctx,
-		`SELECT id, key, name, description, state, revision, inserted_at, updated_at
+		`SELECT id, key, name, description, state, revision, created_performed_by, created_initiated_by, inserted_at, updated_at
 		 FROM projects WHERE id = ?`,
 		projectID,
 	).Scan(
@@ -238,6 +252,8 @@ func loadProject(
 		&project.Description,
 		&project.State,
 		&project.Revision,
+		&project.CreatedAttribution.PerformedBy,
+		&project.CreatedAttribution.InitiatedBy,
 		&insertedAt,
 		&updatedAt,
 	)
@@ -261,6 +277,7 @@ func loadProject(
 func insertActivity(
 	ctx context.Context,
 	tx *sql.Tx,
+	attribution Attribution,
 	eventType string,
 	projectID string,
 	ticketID *string,
@@ -274,10 +291,11 @@ func insertActivity(
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO activity_events
-		 (event_type, actor, project_id, ticket_id, payload, inserted_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		 (event_type, performed_by, initiated_by, project_id, ticket_id, payload, inserted_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		eventType,
-		ActorCodex,
+		attribution.PerformedBy,
+		attribution.InitiatedBy,
 		projectID,
 		ticketID,
 		string(payload),

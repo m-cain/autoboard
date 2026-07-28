@@ -2,9 +2,38 @@
   "$ref": "#/definitions/ProjectList",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "Attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "initiated_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "performed_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "performed_by",
+        "initiated_by"
+      ],
+      "type": "object"
+    },
     "Project": {
       "additionalProperties": false,
       "properties": {
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
+        },
         "description": {
           "type": "string"
         },
@@ -50,6 +79,7 @@
         "description",
         "state",
         "revision",
+        "created_attribution",
         "inserted_at",
         "updated_at"
       ],

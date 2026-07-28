@@ -14,6 +14,7 @@ const project = {
   description: "",
   state: "active",
   revision: 1,
+  created_attribution: { performed_by: "codex", initiated_by: "me" },
   inserted_at: "2026-07-25T12:00:00Z",
   updated_at: "2026-07-25T12:00:00Z",
 };
@@ -28,6 +29,7 @@ const ticket = {
   priority: "high",
   assignee: "codex",
   revision: 1,
+  created_attribution: { performed_by: "codex", initiated_by: "me" },
   parent_ticket_id: null,
   labels: [
     {
@@ -66,7 +68,8 @@ describe("Go-generated browser contracts", () => {
     const event = {
       id: 1,
       event_type: "project.created",
-      actor: "codex",
+      attribution: { performed_by: "codex", initiated_by: "me" },
+      attribution: { performed_by: "codex", initiated_by: "me" },
       project_id: "11111111-1111-4111-8111-111111111111",
       ticket_id: null,
       payload: {},
@@ -138,7 +141,8 @@ describe("Go-generated browser contracts", () => {
           ticket_id: ticket.id,
           project_id: project.id,
           body: "Covered",
-          actor: "me",
+          attribution: { performed_by: "codex", initiated_by: "me" },
+          attribution: { performed_by: "codex", initiated_by: "me" },
           inserted_at: "2026-07-25T12:00:00Z",
         },
       ],
@@ -151,7 +155,8 @@ describe("Go-generated browser contracts", () => {
           media_type: "text/plain",
           byte_size: 7,
           sha256: "a".repeat(64),
-          actor: "system",
+          attribution: { performed_by: "system", initiated_by: "system" },
+          attribution: { performed_by: "system", initiated_by: "system" },
           inserted_at: "2026-07-25T12:00:00Z",
         },
       ],
@@ -159,7 +164,8 @@ describe("Go-generated browser contracts", () => {
         {
           id: 1,
           event_type: "ticket.created",
-          actor: "codex",
+          attribution: { performed_by: "codex", initiated_by: "me" },
+          attribution: { performed_by: "codex", initiated_by: "me" },
           project_id: project.id,
           ticket_id: ticket.id,
           payload: {},

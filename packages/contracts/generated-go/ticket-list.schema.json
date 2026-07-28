@@ -2,6 +2,32 @@
   "$ref": "#/definitions/TicketList",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "Attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "initiated_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "performed_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "performed_by",
+        "initiated_by"
+      ],
+      "type": "object"
+    },
     "Label": {
       "additionalProperties": false,
       "properties": {
@@ -47,6 +73,9 @@
         "comment_count": {
           "minimum": 0,
           "type": "integer"
+        },
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "description": {
           "type": "string"
@@ -129,6 +158,7 @@
         "priority",
         "assignee",
         "revision",
+        "created_attribution",
         "parent_ticket_id",
         "labels",
         "blocked",

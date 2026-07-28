@@ -5,13 +5,8 @@
     "ActivityEvent": {
       "additionalProperties": false,
       "properties": {
-        "actor": {
-          "enum": [
-            "me",
-            "codex",
-            "system"
-          ],
-          "type": "string"
+        "attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "event_type": {
           "minLength": 1,
@@ -47,11 +42,37 @@
       "required": [
         "id",
         "event_type",
-        "actor",
+        "attribution",
         "project_id",
         "ticket_id",
         "payload",
         "inserted_at"
+      ],
+      "type": "object"
+    },
+    "Attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "initiated_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        },
+        "performed_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "performed_by",
+        "initiated_by"
       ],
       "type": "object"
     }

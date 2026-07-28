@@ -15,7 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const Instructions = "Autoboard is a direct-write project board. Tickets assigned to `me` are reserved for the human. Execute only tickets returned by list_actionable_tickets unless the human explicitly instructs otherwise. Read the latest entity before revision-checked writes. Confirm broad reorganizations, project archival, and dependency removal with the human."
+const Instructions = "Autoboard is a direct-write project board. Tickets assigned to `me` are reserved for the human. Execute only tickets returned by list_actionable_tickets unless the human explicitly instructs otherwise. Read the latest entity before revision-checked writes. Every write requires initiated_by: use `me` only when the human explicitly requested that exact Autoboard mutation, otherwise use `codex`; subagents preserve `me` only when their handoff carries that exact human request. Confirm broad reorganizations, project archival, and dependency removal with the human."
 
 type registry struct {
 	service *app.Service
@@ -214,7 +214,7 @@ func (r *registry) registerWriteTools() {
 			app.Project,
 			error,
 		) {
-			output, err := r.service.CreateProject(ctx, app.CreateProjectInput{
+			output, err := r.service.CreateProject(ctx, writeAttribution(input.InitiatedBy), app.CreateProjectInput{
 				Key: input.Key, Name: input.Name, Description: input.Description,
 			})
 			if err != nil {
@@ -242,6 +242,7 @@ func (r *registry) registerWriteTools() {
 			}
 			output, err := r.service.UpdateProject(
 				ctx,
+				writeAttribution(input.InitiatedBy),
 				project.ID,
 				input.ExpectedRevision,
 				app.UpdateProjectInput{
@@ -273,6 +274,7 @@ func (r *registry) registerWriteTools() {
 			}
 			output, err := r.service.ArchiveProject(
 				ctx,
+				writeAttribution(input.InitiatedBy),
 				project.ID,
 				input.ExpectedRevision,
 			)
@@ -301,6 +303,7 @@ func (r *registry) registerWriteTools() {
 			}
 			output, err := r.service.RestoreProject(
 				ctx,
+				writeAttribution(input.InitiatedBy),
 				project.ID,
 				input.ExpectedRevision,
 			)
@@ -347,7 +350,7 @@ func (r *registry) registerWriteTools() {
 			if input.Assignee != nil {
 				assignee = app.Assignee(*input.Assignee)
 			}
-			output, err := r.service.CreateTicket(ctx, app.CreateTicketInput{
+			output, err := r.service.CreateTicket(ctx, writeAttribution(input.InitiatedBy), app.CreateTicketInput{
 				ProjectID:      project.ID,
 				Title:          input.Title,
 				Description:    input.Description,
@@ -382,6 +385,7 @@ func (r *registry) registerWriteTools() {
 			}
 			output, err := r.service.UpdateTicket(
 				ctx,
+				writeAttribution(input.InitiatedBy),
 				ticketID,
 				input.ExpectedRevision,
 				app.UpdateTicketInput{
@@ -417,6 +421,7 @@ func (r *registry) registerWriteTools() {
 			}
 			output, err := r.service.TransitionTicket(
 				ctx,
+				writeAttribution(input.InitiatedBy),
 				ticketID,
 				input.ExpectedRevision,
 				app.TicketStatus(input.Status),
@@ -446,6 +451,7 @@ func (r *registry) registerWriteTools() {
 			}
 			comment, ticket, err := r.service.AddComment(
 				ctx,
+				writeAttribution(input.InitiatedBy),
 				ticketID,
 				input.Body,
 			)
@@ -476,6 +482,7 @@ func (r *registry) registerWriteTools() {
 			}
 			attachment, ticket, err := r.service.AddAttachmentFromPath(
 				ctx,
+				writeAttribution(input.InitiatedBy),
 				ticketID,
 				input.Path,
 			)
@@ -559,6 +566,7 @@ func (r *registry) mutateDependency(
 	if add {
 		return r.service.AddDependency(
 			ctx,
+			writeAttribution(input.InitiatedBy),
 			blockedID,
 			blockerID,
 			input.ExpectedRevision,
@@ -566,6 +574,7 @@ func (r *registry) mutateDependency(
 	}
 	return r.service.RemoveDependency(
 		ctx,
+		writeAttribution(input.InitiatedBy),
 		blockedID,
 		blockerID,
 		input.ExpectedRevision,
@@ -758,6 +767,13 @@ func validationFailure(err error) *mcp.CallToolResult {
 	})
 }
 
+func writeAttribution(initiatedBy string) app.Attribution {
+	return app.Attribution{
+		PerformedBy: app.PrincipalCodex,
+		InitiatedBy: app.Principal(initiatedBy),
+	}
+}
+
 func repairHint(kind app.ErrorKind) string {
 	switch kind {
 	case app.ErrorRevisionConflict:
@@ -806,7 +822,7 @@ func presentAttachment(attachment app.Attachment) attachmentOutput {
 		MediaType:        attachment.MediaType,
 		ByteSize:         attachment.ByteSize,
 		SHA256:           attachment.SHA256,
-		Actor:            attachment.Actor,
+		Attribution:      attachment.Attribution,
 		InsertedAt:       attachment.InsertedAt.Format(time.RFC3339Nano),
 	}
 }

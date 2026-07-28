@@ -11,19 +11,23 @@ import (
 )
 
 type Comment struct {
-	ID         string    `json:"id" jsonschema_extras:"format=uuid"`
-	TicketID   string    `json:"ticket_id" jsonschema_extras:"format=uuid"`
-	ProjectID  string    `json:"project_id" jsonschema_extras:"format=uuid"`
-	Body       string    `json:"body" jsonschema_extras:"minLength=1,maxLength=100000"`
-	Actor      Actor     `json:"actor" jsonschema_extras:"enum=me,enum=codex,enum=system"`
-	InsertedAt time.Time `json:"inserted_at"`
+	ID          string      `json:"id" jsonschema_extras:"format=uuid"`
+	TicketID    string      `json:"ticket_id" jsonschema_extras:"format=uuid"`
+	ProjectID   string      `json:"project_id" jsonschema_extras:"format=uuid"`
+	Body        string      `json:"body" jsonschema_extras:"minLength=1,maxLength=100000"`
+	Attribution Attribution `json:"attribution"`
+	InsertedAt  time.Time   `json:"inserted_at"`
 }
 
 func (s *Service) AddComment(
 	ctx context.Context,
+	attribution Attribution,
 	ticketID string,
 	body string,
 ) (Comment, Ticket, error) {
+	if err := attribution.Validate(); err != nil {
+		return Comment{}, Ticket{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -50,23 +54,24 @@ func (s *Service) AddComment(
 	}
 	now := time.Now().UTC()
 	comment := Comment{
-		ID:         uuid.NewString(),
-		TicketID:   ticket.ID,
-		ProjectID:  ticket.ProjectID,
-		Body:       body,
-		Actor:      ActorCodex,
-		InsertedAt: now,
+		ID:          uuid.NewString(),
+		TicketID:    ticket.ID,
+		ProjectID:   ticket.ProjectID,
+		Body:        body,
+		Attribution: attribution,
+		InsertedAt:  now,
 	}
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO comments
-		 (id, ticket_id, project_id, body, actor, inserted_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		 (id, ticket_id, project_id, body, performed_by, initiated_by, inserted_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		comment.ID,
 		comment.TicketID,
 		comment.ProjectID,
 		comment.Body,
-		comment.Actor,
+		comment.Attribution.PerformedBy,
+		comment.Attribution.InitiatedBy,
 		formatTime(comment.InsertedAt),
 	); err != nil {
 		return Comment{}, Ticket{}, fmt.Errorf("insert comment: %w", err)
@@ -85,6 +90,7 @@ func (s *Service) AddComment(
 	if err := insertActivity(
 		ctx,
 		tx,
+		attribution,
 		"comment.added",
 		ticket.ProjectID,
 		&ticket.ID,

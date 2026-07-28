@@ -27,10 +27,14 @@ func (s *Service) GetTicket(ctx context.Context, ticketID string) (Ticket, error
 
 func (s *Service) UpdateTicket(
 	ctx context.Context,
+	attribution Attribution,
 	ticketID string,
 	expectedRevision int,
 	input UpdateTicketInput,
 ) (Ticket, error) {
+	if err := attribution.Validate(); err != nil {
+		return Ticket{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -164,6 +168,7 @@ func (s *Service) UpdateTicket(
 	if err := insertActivity(
 		ctx,
 		tx,
+		attribution,
 		"ticket.updated",
 		ticket.ProjectID,
 		&ticket.ID,
@@ -180,10 +185,14 @@ func (s *Service) UpdateTicket(
 
 func (s *Service) TransitionTicket(
 	ctx context.Context,
+	attribution Attribution,
 	ticketID string,
 	expectedRevision int,
 	status TicketStatus,
 ) (Ticket, error) {
+	if err := attribution.Validate(); err != nil {
+		return Ticket{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -245,6 +254,7 @@ func (s *Service) TransitionTicket(
 	if err := insertActivity(
 		ctx,
 		tx,
+		attribution,
 		"ticket.transitioned",
 		ticket.ProjectID,
 		&ticket.ID,
@@ -259,6 +269,7 @@ func (s *Service) TransitionTicket(
 		if err := notifyDirectlyBlockedTickets(
 			ctx,
 			tx,
+			attribution,
 			ticket,
 			oldStatus,
 			status,
@@ -275,10 +286,14 @@ func (s *Service) TransitionTicket(
 
 func (s *Service) AddDependency(
 	ctx context.Context,
+	attribution Attribution,
 	blockedTicketID string,
 	blockerTicketID string,
 	expectedRevision int,
 ) (Ticket, error) {
+	if err := attribution.Validate(); err != nil {
+		return Ticket{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -371,6 +386,7 @@ func (s *Service) AddDependency(
 	if err := insertActivity(
 		ctx,
 		tx,
+		attribution,
 		"dependency.added",
 		blocked.ProjectID,
 		&blocked.ID,
@@ -387,10 +403,14 @@ func (s *Service) AddDependency(
 
 func (s *Service) RemoveDependency(
 	ctx context.Context,
+	attribution Attribution,
 	blockedTicketID string,
 	blockerTicketID string,
 	expectedRevision int,
 ) (Ticket, error) {
+	if err := attribution.Validate(); err != nil {
+		return Ticket{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -455,6 +475,7 @@ func (s *Service) RemoveDependency(
 	if err := insertActivity(
 		ctx,
 		tx,
+		attribution,
 		"dependency.removed",
 		blocked.ProjectID,
 		&blocked.ID,
@@ -495,6 +516,8 @@ func loadTicket(
 		        tickets.assignee,
 		        tickets.revision,
 		        tickets.parent_ticket_id,
+		        tickets.created_performed_by,
+		        tickets.created_initiated_by,
 		        EXISTS (
 		          SELECT 1
 		          FROM ticket_dependencies
@@ -522,6 +545,8 @@ func loadTicket(
 		&ticket.Assignee,
 		&ticket.Revision,
 		&parentTicketID,
+		&ticket.CreatedAttribution.PerformedBy,
+		&ticket.CreatedAttribution.InitiatedBy,
 		&ticket.Blocked,
 		&ticket.CommentCount,
 		&ticket.AttachmentCount,
@@ -896,6 +921,7 @@ func dependencyReachable(
 func notifyDirectlyBlockedTickets(
 	ctx context.Context,
 	tx *sql.Tx,
+	attribution Attribution,
 	blocker Ticket,
 	from TicketStatus,
 	to TicketStatus,
@@ -938,6 +964,7 @@ func notifyDirectlyBlockedTickets(
 		if err := insertActivity(
 			ctx,
 			tx,
+			attribution,
 			"dependency.blocking_changed",
 			blocker.ProjectID,
 			&ticketID,

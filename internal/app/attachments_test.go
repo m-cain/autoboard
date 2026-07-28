@@ -14,7 +14,7 @@ import (
 func TestAttachmentCopiesMetadataAndReadsSmallTextInline(t *testing.T) {
 	service, dataDir := openAttachmentService(t, 50*1024*1024)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -24,7 +24,7 @@ func TestAttachmentCopiesMetadataAndReadsSmallTextInline(t *testing.T) {
 		t.Fatalf("write source: %v", err)
 	}
 
-	attachment, ticket, err := service.AddAttachmentFromPath(ctx, ticket.ID, source)
+	attachment, ticket, err := service.AddAttachmentFromPath(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, ticket.ID, source)
 	if err != nil {
 		t.Fatalf("add attachment: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestAttachmentCopiesMetadataAndReadsSmallTextInline(t *testing.T) {
 func TestAttachmentRejectsUnsafePathsAndConfiguredSize(t *testing.T) {
 	service, _ := openAttachmentService(t, 3)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestAttachmentRejectsUnsafePathsAndConfiguredSize(t *testing.T) {
 		t.Fatalf("create symlink: %v", err)
 	}
 	for _, path := range []string{"source.txt", sourceDir, symlink, source} {
-		_, _, err := service.AddAttachmentFromPath(ctx, ticket.ID, path)
+		_, _, err := service.AddAttachmentFromPath(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, ticket.ID, path)
 		var domainErr *app.Error
 		if !errors.As(err, &domainErr) || domainErr.Kind != app.ErrorValidationFailed {
 			t.Errorf("path %q error = %v, want validation_failed", path, err)
@@ -101,7 +101,7 @@ func TestAttachmentRejectsUnsafePathsAndConfiguredSize(t *testing.T) {
 func TestAttachmentReadUsesInlineBoundaryAndUTF8Guard(t *testing.T) {
 	service, _ := openAttachmentService(t, 2*1024*1024)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{Key: "AUTO", Name: "Auto"})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -121,6 +121,7 @@ func TestAttachmentReadUsesInlineBoundaryAndUTF8Guard(t *testing.T) {
 		}
 		attachment, updated, err := service.AddAttachmentFromPath(
 			ctx,
+			app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex},
 			ticket.ID,
 			source,
 		)

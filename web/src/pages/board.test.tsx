@@ -21,6 +21,7 @@ const project = (key: string, state: Project["state"] = "active"): Project => ({
   description: "",
   state,
   revision: 1,
+  created_attribution: { performed_by: "codex", initiated_by: "codex" },
   inserted_at: timestamp,
   updated_at: timestamp,
 });
@@ -42,6 +43,7 @@ const ticket = (
   priority: "none",
   assignee: "unassigned",
   revision: 1,
+  created_attribution: { performed_by: "codex", initiated_by: "codex" },
   parent_ticket_id: null,
   labels: [],
   blocked: false,

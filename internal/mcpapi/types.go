@@ -33,12 +33,14 @@ type attachmentRefInput struct {
 }
 
 type createProjectInput struct {
+	InitiatedBy string `json:"initiated_by" jsonschema:"required" jsonschema_description:"Use me only for an exact mutation explicitly requested by the human; use codex for an agent-selected operation. Subagents preserve me only when their handoff carries that exact request." jsonschema_extras:"enum=me,enum=codex"`
 	Key         string `json:"key"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 }
 
 type updateProjectInput struct {
+	InitiatedBy      string  `json:"initiated_by" jsonschema:"required" jsonschema_description:"Use me only for an exact mutation explicitly requested by the human; use codex for an agent-selected operation. Subagents preserve me only when their handoff carries that exact request." jsonschema_extras:"enum=me,enum=codex"`
 	ProjectID        string  `json:"project_id"`
 	ExpectedRevision int     `json:"expected_revision"`
 	Name             *string `json:"name,omitempty"`
@@ -46,11 +48,13 @@ type updateProjectInput struct {
 }
 
 type projectRevisionInput struct {
+	InitiatedBy      string `json:"initiated_by" jsonschema:"required" jsonschema_description:"Use me only for an exact mutation explicitly requested by the human; use codex for an agent-selected operation. Subagents preserve me only when their handoff carries that exact request." jsonschema_extras:"enum=me,enum=codex"`
 	ProjectID        string `json:"project_id"`
 	ExpectedRevision int    `json:"expected_revision"`
 }
 
 type createTicketInput struct {
+	InitiatedBy    string   `json:"initiated_by" jsonschema:"required" jsonschema_description:"Use me only for an exact mutation explicitly requested by the human; use codex for an agent-selected operation. Subagents preserve me only when their handoff carries that exact request." jsonschema_extras:"enum=me,enum=codex"`
 	ProjectID      string   `json:"project_id"`
 	Title          string   `json:"title"`
 	Description    string   `json:"description,omitempty"`
@@ -62,6 +66,7 @@ type createTicketInput struct {
 }
 
 type updateTicketInput struct {
+	InitiatedBy      string    `json:"initiated_by" jsonschema:"required" jsonschema_description:"Use me only for an exact mutation explicitly requested by the human; use codex for an agent-selected operation. Subagents preserve me only when their handoff carries that exact request." jsonschema_extras:"enum=me,enum=codex"`
 	TicketID         string    `json:"ticket_id"`
 	ExpectedRevision int       `json:"expected_revision"`
 	Title            *string   `json:"title,omitempty"`
@@ -72,22 +77,26 @@ type updateTicketInput struct {
 }
 
 type transitionTicketInput struct {
+	InitiatedBy      string `json:"initiated_by" jsonschema:"required" jsonschema_description:"Use me only for an exact mutation explicitly requested by the human; use codex for an agent-selected operation. Subagents preserve me only when their handoff carries that exact request." jsonschema_extras:"enum=me,enum=codex"`
 	TicketID         string `json:"ticket_id"`
 	ExpectedRevision int    `json:"expected_revision"`
 	Status           string `json:"status"`
 }
 
 type addCommentInput struct {
-	TicketID string `json:"ticket_id"`
-	Body     string `json:"body"`
+	InitiatedBy string `json:"initiated_by" jsonschema:"required" jsonschema_description:"Use me only for an exact mutation explicitly requested by the human; use codex for an agent-selected operation. Subagents preserve me only when their handoff carries that exact request." jsonschema_extras:"enum=me,enum=codex"`
+	TicketID    string `json:"ticket_id"`
+	Body        string `json:"body"`
 }
 
 type addAttachmentInput struct {
-	TicketID string `json:"ticket_id"`
-	Path     string `json:"path"`
+	InitiatedBy string `json:"initiated_by" jsonschema:"required" jsonschema_description:"Use me only for an exact mutation explicitly requested by the human; use codex for an agent-selected operation. Subagents preserve me only when their handoff carries that exact request." jsonschema_extras:"enum=me,enum=codex"`
+	TicketID    string `json:"ticket_id"`
+	Path        string `json:"path"`
 }
 
 type dependencyInput struct {
+	InitiatedBy      string `json:"initiated_by" jsonschema:"required" jsonschema_description:"Use me only for an exact mutation explicitly requested by the human; use codex for an agent-selected operation. Subagents preserve me only when their handoff carries that exact request." jsonschema_extras:"enum=me,enum=codex"`
 	BlockedTicketID  string `json:"blocked_ticket_id"`
 	BlockerTicketID  string `json:"blocker_ticket_id"`
 	ExpectedRevision int    `json:"expected_revision"`
@@ -103,18 +112,18 @@ type commentOutput struct {
 }
 
 type attachmentOutput struct {
-	ID               string    `json:"id"`
-	TicketID         string    `json:"ticket_id"`
-	ProjectID        string    `json:"project_id"`
-	OriginalFilename string    `json:"original_filename"`
-	MediaType        string    `json:"media_type"`
-	ByteSize         int64     `json:"byte_size"`
-	SHA256           string    `json:"sha256"`
-	Actor            app.Actor `json:"actor"`
-	InsertedAt       string    `json:"inserted_at"`
-	TicketRevision   int       `json:"ticket_revision,omitempty"`
-	Content          *string   `json:"content,omitempty"`
-	ManagedPath      *string   `json:"managed_path,omitempty"`
+	ID               string          `json:"id"`
+	TicketID         string          `json:"ticket_id"`
+	ProjectID        string          `json:"project_id"`
+	OriginalFilename string          `json:"original_filename"`
+	MediaType        string          `json:"media_type"`
+	ByteSize         int64           `json:"byte_size"`
+	SHA256           string          `json:"sha256"`
+	Attribution      app.Attribution `json:"attribution"`
+	InsertedAt       string          `json:"inserted_at"`
+	TicketRevision   int             `json:"ticket_revision,omitempty"`
+	Content          *string         `json:"content,omitempty"`
+	ManagedPath      *string         `json:"managed_path,omitempty"`
 }
 
 func schemaFor[T any](configure func(*jsonschema.Schema)) *jsonschema.Schema {

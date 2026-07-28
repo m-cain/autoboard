@@ -25,7 +25,7 @@ func TestCreateProjectPersistsDefaultsAndActivity(t *testing.T) {
 		}
 	})
 
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "auto",
 		Name: "Autoboard",
 	})
@@ -56,11 +56,36 @@ func TestCreateProjectPersistsDefaultsAndActivity(t *testing.T) {
 	if events[0].EventType != "project.created" {
 		t.Errorf("event type = %q, want project.created", events[0].EventType)
 	}
-	if events[0].Actor != app.ActorCodex {
-		t.Errorf("actor = %q, want codex", events[0].Actor)
+	if events[0].Attribution != (app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}) {
+		t.Errorf("attribution = %#v", events[0].Attribution)
 	}
 	if events[0].ProjectID != project.ID {
 		t.Errorf("event project = %q, want %q", events[0].ProjectID, project.ID)
+	}
+}
+
+func TestCreateProjectPersistsCreatedAttribution(t *testing.T) {
+	ctx := context.Background()
+	service, err := app.Open(ctx, app.Config{DatabasePath: filepath.Join(t.TempDir(), "autoboard.db")})
+	if err != nil {
+		t.Fatalf("open app: %v", err)
+	}
+	t.Cleanup(func() { _ = service.Close() })
+	attribution := app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalMe}
+
+	project, err := service.CreateProject(ctx, attribution, app.CreateProjectInput{Key: "ATTR", Name: "Attributed"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if project.CreatedAttribution != attribution {
+		t.Errorf("created attribution = %#v, want %#v", project.CreatedAttribution, attribution)
+	}
+	reloaded, err := service.GetProject(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("reload project: %v", err)
+	}
+	if reloaded.CreatedAttribution != attribution {
+		t.Errorf("reloaded attribution = %#v, want %#v", reloaded.CreatedAttribution, attribution)
 	}
 }
 
@@ -134,7 +159,7 @@ func TestClosedServiceRejectsAllOperationsWithoutPanicking(t *testing.T) {
 			return operationErr
 		},
 		"create project": func() error {
-			_, operationErr := service.CreateProject(ctx, app.CreateProjectInput{
+			_, operationErr := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 				Key:  "AUTO",
 				Name: "Autoboard",
 			})
@@ -143,6 +168,7 @@ func TestClosedServiceRejectsAllOperationsWithoutPanicking(t *testing.T) {
 		"update project": func() error {
 			_, operationErr := service.UpdateProject(
 				ctx,
+				app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex},
 				id,
 				1,
 				app.UpdateProjectInput{Name: &name},
@@ -150,15 +176,15 @@ func TestClosedServiceRejectsAllOperationsWithoutPanicking(t *testing.T) {
 			return operationErr
 		},
 		"archive project": func() error {
-			_, operationErr := service.ArchiveProject(ctx, id, 1)
+			_, operationErr := service.ArchiveProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, id, 1)
 			return operationErr
 		},
 		"restore project": func() error {
-			_, operationErr := service.RestoreProject(ctx, id, 1)
+			_, operationErr := service.RestoreProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, id, 1)
 			return operationErr
 		},
 		"create ticket": func() error {
-			_, operationErr := service.CreateTicket(ctx, app.CreateTicketInput{
+			_, operationErr := service.CreateTicket(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateTicketInput{
 				ProjectID: id,
 				Title:     "Ticket",
 			})
@@ -171,6 +197,7 @@ func TestClosedServiceRejectsAllOperationsWithoutPanicking(t *testing.T) {
 		"update ticket": func() error {
 			_, operationErr := service.UpdateTicket(
 				ctx,
+				app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex},
 				id,
 				1,
 				app.UpdateTicketInput{Title: &title},
@@ -180,6 +207,7 @@ func TestClosedServiceRejectsAllOperationsWithoutPanicking(t *testing.T) {
 		"transition ticket": func() error {
 			_, operationErr := service.TransitionTicket(
 				ctx,
+				app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex},
 				id,
 				1,
 				app.TicketDone,
@@ -187,15 +215,15 @@ func TestClosedServiceRejectsAllOperationsWithoutPanicking(t *testing.T) {
 			return operationErr
 		},
 		"add dependency": func() error {
-			_, operationErr := service.AddDependency(ctx, id, id, 1)
+			_, operationErr := service.AddDependency(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, id, id, 1)
 			return operationErr
 		},
 		"remove dependency": func() error {
-			_, operationErr := service.RemoveDependency(ctx, id, id, 1)
+			_, operationErr := service.RemoveDependency(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, id, id, 1)
 			return operationErr
 		},
 		"add comment": func() error {
-			_, _, operationErr := service.AddComment(ctx, id, "Comment")
+			_, _, operationErr := service.AddComment(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, id, "Comment")
 			return operationErr
 		},
 		"get attachment": func() error {
@@ -207,7 +235,7 @@ func TestClosedServiceRejectsAllOperationsWithoutPanicking(t *testing.T) {
 			return operationErr
 		},
 		"add attachment": func() error {
-			_, _, operationErr := service.AddAttachmentFromPath(ctx, id, source)
+			_, _, operationErr := service.AddAttachmentFromPath(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, id, source)
 			return operationErr
 		},
 	}
@@ -239,7 +267,7 @@ func TestCreateTicketAllocatesProjectLocalNumbersConcurrently(t *testing.T) {
 			t.Errorf("close app: %v", err)
 		}
 	})
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "auto",
 		Name: "Autoboard",
 	})
@@ -253,7 +281,7 @@ func TestCreateTicketAllocatesProjectLocalNumbersConcurrently(t *testing.T) {
 	var workers sync.WaitGroup
 	for range count {
 		workers.Go(func() {
-			ticket, err := service.CreateTicket(ctx, app.CreateTicketInput{
+			ticket, err := service.CreateTicket(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateTicketInput{
 				ProjectID: project.ID,
 				Title:     "Concurrent ticket",
 			})

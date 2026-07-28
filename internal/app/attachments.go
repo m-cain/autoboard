@@ -20,16 +20,16 @@ import (
 const attachmentInlineLimit = int64(262_144)
 
 type Attachment struct {
-	ID               string    `json:"id" jsonschema_extras:"format=uuid"`
-	TicketID         string    `json:"ticket_id" jsonschema_extras:"format=uuid"`
-	ProjectID        string    `json:"project_id" jsonschema_extras:"format=uuid"`
-	OriginalFilename string    `json:"original_filename" jsonschema_extras:"minLength=1"`
-	MediaType        string    `json:"media_type" jsonschema_extras:"minLength=1"`
-	ByteSize         int64     `json:"byte_size" jsonschema_extras:"minimum=0"`
-	SHA256           string    `json:"sha256" jsonschema_extras:"pattern=^[a-f0-9]{64}$"`
-	ManagedPath      string    `json:"-"`
-	Actor            Actor     `json:"actor" jsonschema_extras:"enum=me,enum=codex,enum=system"`
-	InsertedAt       time.Time `json:"inserted_at"`
+	ID               string      `json:"id" jsonschema_extras:"format=uuid"`
+	TicketID         string      `json:"ticket_id" jsonschema_extras:"format=uuid"`
+	ProjectID        string      `json:"project_id" jsonschema_extras:"format=uuid"`
+	OriginalFilename string      `json:"original_filename" jsonschema_extras:"minLength=1"`
+	MediaType        string      `json:"media_type" jsonschema_extras:"minLength=1"`
+	ByteSize         int64       `json:"byte_size" jsonschema_extras:"minimum=0"`
+	SHA256           string      `json:"sha256" jsonschema_extras:"pattern=^[a-f0-9]{64}$"`
+	ManagedPath      string      `json:"-"`
+	Attribution      Attribution `json:"attribution"`
+	InsertedAt       time.Time   `json:"inserted_at"`
 }
 
 type AttachmentRead struct {
@@ -48,9 +48,13 @@ type stagedAttachment struct {
 
 func (s *Service) AddAttachmentFromPath(
 	ctx context.Context,
+	attribution Attribution,
 	ticketID string,
 	sourcePath string,
 ) (Attachment, Ticket, error) {
+	if err := attribution.Validate(); err != nil {
+		return Attachment{}, Ticket{}, err
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -105,15 +109,15 @@ func (s *Service) AddAttachmentFromPath(
 		ByteSize:         staged.byteSize,
 		SHA256:           staged.sha256,
 		ManagedPath:      finalPath,
-		Actor:            ActorCodex,
+		Attribution:      attribution,
 		InsertedAt:       now,
 	}
 	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO attachments
 		 (id, ticket_id, project_id, original_filename, media_type, byte_size,
-		  sha256, managed_path, actor, inserted_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  sha256, managed_path, performed_by, initiated_by, inserted_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		attachment.ID,
 		attachment.TicketID,
 		attachment.ProjectID,
@@ -122,7 +126,8 @@ func (s *Service) AddAttachmentFromPath(
 		attachment.ByteSize,
 		attachment.SHA256,
 		attachment.ManagedPath,
-		attachment.Actor,
+		attachment.Attribution.PerformedBy,
+		attachment.Attribution.InitiatedBy,
 		formatTime(attachment.InsertedAt),
 	); err != nil {
 		return Attachment{}, Ticket{}, fmt.Errorf("insert attachment: %w", err)
@@ -144,6 +149,7 @@ func (s *Service) AddAttachmentFromPath(
 	if err := insertActivity(
 		ctx,
 		tx,
+		attribution,
 		"attachment.added",
 		ticket.ProjectID,
 		&ticket.ID,
@@ -227,7 +233,7 @@ func loadAttachment(
 	err := query.QueryRowContext(
 		ctx,
 		`SELECT id, ticket_id, project_id, original_filename, media_type,
-		        byte_size, sha256, managed_path, actor, inserted_at
+		        byte_size, sha256, managed_path, performed_by, initiated_by, inserted_at
 		 FROM attachments
 		 WHERE id = ?`,
 		attachmentID,
@@ -240,7 +246,8 @@ func loadAttachment(
 		&attachment.ByteSize,
 		&attachment.SHA256,
 		&attachment.ManagedPath,
-		&attachment.Actor,
+		&attachment.Attribution.PerformedBy,
+		&attachment.Attribution.InitiatedBy,
 		&insertedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

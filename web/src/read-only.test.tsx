@@ -17,6 +17,7 @@ const ticket: TicketSummary = {
   priority: "medium",
   assignee: "codex",
   revision: 1,
+  created_attribution: { performed_by: "codex", initiated_by: "codex" },
   parent_ticket_id: null,
   labels: [],
   blocked: false,

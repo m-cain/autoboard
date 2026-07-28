@@ -20,21 +20,21 @@ func TestProjectCreateAndUpdateEnforceDomainBounds(t *testing.T) {
 		{Key: "GOOD", Name: strings.Repeat("x", 201)},
 		{Key: "GOOD", Name: "Good", Description: strings.Repeat("x", 100_001)},
 	} {
-		_, err := service.CreateProject(ctx, input)
+		_, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, input)
 		var domainErr *app.Error
 		if !errors.As(err, &domainErr) ||
 			domainErr.Kind != app.ErrorValidationFailed {
 			t.Errorf("create %#v error = %v, want validation_failed", input, err)
 		}
 	}
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "GOOD",
 		Name: "Good",
 	})
 	if err != nil {
 		t.Fatalf("create valid project: %v", err)
 	}
-	_, err = service.CreateProject(ctx, app.CreateProjectInput{
+	_, err = service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "good",
 		Name: "Duplicate",
 	})
@@ -46,6 +46,7 @@ func TestProjectCreateAndUpdateEnforceDomainBounds(t *testing.T) {
 	name := strings.Repeat("x", 201)
 	_, err = service.UpdateProject(
 		ctx,
+		app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex},
 		project.ID,
 		project.Revision,
 		app.UpdateProjectInput{Name: &name},
@@ -59,7 +60,7 @@ func TestProjectCreateAndUpdateEnforceDomainBounds(t *testing.T) {
 func TestUpdateProjectReturnsCurrentProjectOnRevisionConflict(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "auto",
 		Name: "Autoboard",
 	})
@@ -67,7 +68,7 @@ func TestUpdateProjectReturnsCurrentProjectOnRevisionConflict(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	_, err = service.UpdateProject(ctx, project.ID, 99, app.UpdateProjectInput{
+	_, err = service.UpdateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, project.ID, 99, app.UpdateProjectInput{
 		Name: pointer("Renamed"),
 	})
 	var domainErr *app.Error
@@ -85,7 +86,7 @@ func TestUpdateProjectReturnsCurrentProjectOnRevisionConflict(t *testing.T) {
 func TestUpdateProjectNoOpDoesNotAdvanceRevisionOrActivity(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "auto",
 		Name: "Autoboard",
 	})
@@ -93,7 +94,7 @@ func TestUpdateProjectNoOpDoesNotAdvanceRevisionOrActivity(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	updated, err := service.UpdateProject(ctx, project.ID, 1, app.UpdateProjectInput{
+	updated, err := service.UpdateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, project.ID, 1, app.UpdateProjectInput{
 		Name: pointer("Autoboard"),
 	})
 	if err != nil {
@@ -114,19 +115,19 @@ func TestUpdateProjectNoOpDoesNotAdvanceRevisionOrActivity(t *testing.T) {
 func TestArchivedProjectRejectsTicketCreationUntilRestored(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "auto",
 		Name: "Autoboard",
 	})
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	project, err = service.ArchiveProject(ctx, project.ID, project.Revision)
+	project, err = service.ArchiveProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, project.ID, project.Revision)
 	if err != nil {
 		t.Fatalf("archive project: %v", err)
 	}
 
-	_, err = service.CreateTicket(ctx, app.CreateTicketInput{
+	_, err = service.CreateTicket(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateTicketInput{
 		ProjectID: project.ID,
 		Title:     "Rejected",
 	})
@@ -135,14 +136,14 @@ func TestArchivedProjectRejectsTicketCreationUntilRestored(t *testing.T) {
 		t.Fatalf("create ticket error = %v, want invalid_transition", err)
 	}
 
-	project, err = service.RestoreProject(ctx, project.ID, project.Revision)
+	project, err = service.RestoreProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, project.ID, project.Revision)
 	if err != nil {
 		t.Fatalf("restore project: %v", err)
 	}
 	if project.State != app.ProjectActive || project.Revision != 3 {
 		t.Errorf("restored project = %#v, want active revision 3", project)
 	}
-	if _, err := service.CreateTicket(ctx, app.CreateTicketInput{
+	if _, err := service.CreateTicket(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateTicketInput{
 		ProjectID: project.ID,
 		Title:     "Accepted",
 	}); err != nil {
@@ -153,7 +154,7 @@ func TestArchivedProjectRejectsTicketCreationUntilRestored(t *testing.T) {
 func TestProjectStateChangesRejectStaleAndRepeatedRequests(t *testing.T) {
 	service := openService(t)
 	ctx := context.Background()
-	project, err := service.CreateProject(ctx, app.CreateProjectInput{
+	project, err := service.CreateProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, app.CreateProjectInput{
 		Key:  "AUTO",
 		Name: "Autoboard",
 	})
@@ -161,24 +162,25 @@ func TestProjectStateChangesRejectStaleAndRepeatedRequests(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	_, err = service.RestoreProject(ctx, project.ID, project.Revision)
+	_, err = service.RestoreProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, project.ID, project.Revision)
 	var domainErr *app.Error
 	if !errors.As(err, &domainErr) ||
 		domainErr.Kind != app.ErrorInvalidTransition {
 		t.Fatalf("restore active project error = %v, want invalid_transition", err)
 	}
-	_, err = service.ArchiveProject(ctx, project.ID, 99)
+	_, err = service.ArchiveProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, project.ID, 99)
 	if !errors.As(err, &domainErr) ||
 		domainErr.Kind != app.ErrorRevisionConflict ||
 		domainErr.CurrentProject == nil {
 		t.Fatalf("stale archive error = %#v, want revision_conflict", err)
 	}
-	project, err = service.ArchiveProject(ctx, project.ID, project.Revision)
+	project, err = service.ArchiveProject(ctx, app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex}, project.ID, project.Revision)
 	if err != nil {
 		t.Fatalf("archive project: %v", err)
 	}
 	_, err = service.UpdateProject(
 		ctx,
+		app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalCodex},
 		project.ID,
 		project.Revision,
 		app.UpdateProjectInput{Name: pointer("Renamed")},

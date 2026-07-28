@@ -50,7 +50,7 @@ type TicketDetail struct {
 func (s *Service) ListProjects(ctx context.Context) (ProjectList, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, key, name, description, state, revision, inserted_at, updated_at
+		`SELECT id, key, name, description, state, revision, created_performed_by, created_initiated_by, inserted_at, updated_at
 		 FROM projects
 		 ORDER BY lower(name), id`,
 	)
@@ -442,7 +442,7 @@ func (s *Service) listTicketComments(
 ) ([]Comment, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, ticket_id, project_id, body, actor, inserted_at
+		`SELECT id, ticket_id, project_id, body, performed_by, initiated_by, inserted_at
 		 FROM comments
 		 WHERE ticket_id = ?
 		 ORDER BY inserted_at, id`,
@@ -461,7 +461,8 @@ func (s *Service) listTicketComments(
 			&comment.TicketID,
 			&comment.ProjectID,
 			&comment.Body,
-			&comment.Actor,
+			&comment.Attribution.PerformedBy,
+			&comment.Attribution.InitiatedBy,
 			&insertedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan ticket comment: %w", err)
@@ -526,7 +527,7 @@ func (s *Service) listTicketActivity(
 ) ([]ActivityEvent, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, event_type, actor, project_id, ticket_id, payload, inserted_at
+		`SELECT id, event_type, performed_by, initiated_by, project_id, ticket_id, payload, inserted_at
 		 FROM activity_events
 		 WHERE ticket_id = ?
 		 ORDER BY id DESC
@@ -563,6 +564,8 @@ func scanProject(row rowScanner) (Project, error) {
 		&project.Description,
 		&project.State,
 		&project.Revision,
+		&project.CreatedAttribution.PerformedBy,
+		&project.CreatedAttribution.InitiatedBy,
 		&insertedAt,
 		&updatedAt,
 	); err != nil {
@@ -587,7 +590,8 @@ func scanActivity(row rowScanner) (ActivityEvent, error) {
 	if err := row.Scan(
 		&event.ID,
 		&event.EventType,
-		&event.Actor,
+		&event.Attribution.PerformedBy,
+		&event.Attribution.InitiatedBy,
 		&event.ProjectID,
 		&event.TicketID,
 		&payload,

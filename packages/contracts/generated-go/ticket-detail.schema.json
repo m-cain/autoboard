@@ -5,13 +5,8 @@
     "ActivityEvent": {
       "additionalProperties": false,
       "properties": {
-        "actor": {
-          "enum": [
-            "me",
-            "codex",
-            "system"
-          ],
-          "type": "string"
+        "attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "event_type": {
           "minLength": 1,
@@ -47,7 +42,7 @@
       "required": [
         "id",
         "event_type",
-        "actor",
+        "attribution",
         "project_id",
         "ticket_id",
         "payload",
@@ -58,13 +53,8 @@
     "Attachment": {
       "additionalProperties": false,
       "properties": {
-        "actor": {
-          "enum": [
-            "me",
-            "codex",
-            "system"
-          ],
-          "type": "string"
+        "attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "byte_size": {
           "minimum": 0,
@@ -107,21 +97,42 @@
         "media_type",
         "byte_size",
         "sha256",
-        "actor",
+        "attribution",
         "inserted_at"
       ],
       "type": "object"
     },
-    "Comment": {
+    "Attribution": {
       "additionalProperties": false,
       "properties": {
-        "actor": {
+        "initiated_by": {
           "enum": [
             "me",
             "codex",
             "system"
           ],
           "type": "string"
+        },
+        "performed_by": {
+          "enum": [
+            "me",
+            "codex",
+            "system"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "performed_by",
+        "initiated_by"
+      ],
+      "type": "object"
+    },
+    "Comment": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "body": {
           "maxLength": 100000,
@@ -150,7 +161,7 @@
         "ticket_id",
         "project_id",
         "body",
-        "actor",
+        "attribution",
         "inserted_at"
       ],
       "type": "object"
@@ -182,6 +193,9 @@
     "Project": {
       "additionalProperties": false,
       "properties": {
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
+        },
         "description": {
           "type": "string"
         },
@@ -227,6 +241,7 @@
         "description",
         "state",
         "revision",
+        "created_attribution",
         "inserted_at",
         "updated_at"
       ],
@@ -253,6 +268,9 @@
         "comment_count": {
           "minimum": 0,
           "type": "integer"
+        },
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "description": {
           "type": "string"
@@ -335,6 +353,7 @@
         "priority",
         "assignee",
         "revision",
+        "created_attribution",
         "parent_ticket_id",
         "labels",
         "blocked",
@@ -396,6 +415,9 @@
             "$ref": "#/definitions/Comment"
           },
           "type": "array"
+        },
+        "created_attribution": {
+          "$ref": "#/definitions/Attribution"
         },
         "description": {
           "type": "string"
@@ -497,6 +519,7 @@
         "priority",
         "assignee",
         "revision",
+        "created_attribution",
         "parent_ticket_id",
         "labels",
         "blocked",

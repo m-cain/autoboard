@@ -21,6 +21,7 @@ const project = {
   description: "",
   state: "active",
   revision: 1,
+  created_attribution: { performed_by: "codex", initiated_by: "codex" },
   inserted_at: "2026-07-16T12:34:56Z",
   updated_at: "2026-07-16T12:34:56Z",
 } as Project;
@@ -34,6 +35,7 @@ const ticketSummary = {
   priority: "medium",
   assignee: "codex",
   revision: 1,
+  created_attribution: { performed_by: "codex", initiated_by: "codex" },
   parent_ticket_id: null,
   labels: [],
   blocked: false,
@@ -62,6 +64,7 @@ const detail = {
   priority: "medium",
   assignee: "codex",
   revision: 1,
+  created_attribution: { performed_by: "codex", initiated_by: "codex" },
   parent_ticket_id: null,
   labels: [],
   blocked: false,
