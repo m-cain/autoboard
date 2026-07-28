@@ -601,8 +601,11 @@ func TestRestoreIntegrationSnapshotsRestoresPreviousArtifacts(t *testing.T) {
 	}).Status(); err != nil || status != installation.SkillCurrent {
 		t.Errorf("restored skill status = %q, %v", status, err)
 	}
-	if content, err := os.ReadFile(filepath.Join(skillPath, "concurrent.txt")); err != nil || string(content) != "keep me\n" {
-		t.Errorf("concurrent skill file after restore = %q, %v", content, err)
+	if _, err := os.Stat(filepath.Join(skillPath, "concurrent.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("changed skill file remains after restore: %v", err)
+	}
+	if content, err := os.ReadFile(filepath.Join(skillSnapshot.backup, "concurrent.txt")); err != nil || string(content) != "keep me\n" {
+		t.Errorf("replaced skill state = %q, %v", content, err)
 	}
 
 	missingSnapshot, err := snapshotSkill(filepath.Join(root, "missing"))

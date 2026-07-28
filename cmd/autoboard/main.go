@@ -348,6 +348,8 @@ type skillSnapshot struct {
 	backup string
 }
 
+var swapSkillDirectories = atomicSwapDirectories
+
 func snapshotFile(path string) (fileSnapshot, error) {
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -411,10 +413,7 @@ func restoreSkill(directory string, snapshot skillSnapshot) error {
 		}
 		return nil
 	}
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return fmt.Errorf("restore installed skill directory: %w", err)
-	}
-	if err := copyDirectory(snapshot.backup, directory); err != nil {
+	if err := swapSkillDirectories(directory, snapshot.backup); err != nil {
 		return fmt.Errorf("restore installed skill: %w", err)
 	}
 	return nil
