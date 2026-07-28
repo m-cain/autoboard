@@ -55,6 +55,10 @@ registration, and owned personal skill, but deliberately preserves the database
 and attachments. `just update-service` refreshes both Codex integration
 artifacts from the recorded checkout.
 
+The Codex skill refresh and rollback primitive atomically exchanges skill
+directories on macOS and Linux. The install, update, and service lifecycle
+commands documented here remain macOS-only.
+
 Start a new Codex task after installing or updating, then use the canonical
 prompt `$autoboard create ticket in …`. Ordinary Autoboard phrasing also
 activates the skill implicitly. If a new task does not discover the updated

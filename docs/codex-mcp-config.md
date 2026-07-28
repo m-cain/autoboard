@@ -26,6 +26,9 @@ personal skill is current. `just update-service` rebuilds from the recorded
 checkout, atomically replaces the service, refreshes both Codex integration
 artifacts, and verifies it.
 
+Atomic skill refresh is implemented for macOS and Linux. The documented
+production service lifecycle currently requires macOS.
+
 Autoboard exposes 17 bounded tools and no generic command or SQL escape hatch.
 The server instructions reserve tickets assigned to `me` for the human, direct
 Codex to `list_actionable_tickets`, require fresh reads before

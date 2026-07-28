@@ -35,7 +35,9 @@ database, or container runtime.
   fingerprints, exact Codex MCP registration, and ownership-safe installation
   of the personal Autoboard skill. The lifecycle transaction preflights both
   Codex artifacts before changing the LaunchAgent, then restores their prior
-  state if a later installation step fails.
+  state if a later installation step fails. Its fail-closed skill transaction
+  uses Darwin `renameatx_np(RENAME_SWAP)` or Linux
+  `renameat2(RENAME_EXCHANGE)` for atomic directory exchange.
 
 The daemon rejects non-loopback peers, unexpected Host values, and unexpected
 origins across every route. Development mode adds only the two Vite loopback
