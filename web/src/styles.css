@@ -315,6 +315,7 @@ main {
 }
 .ticket-facts .attribution-label {
   font-size: 13px;
+  text-transform: none;
 }
 .label-list,
 .detail-ticket-links,

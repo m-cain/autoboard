@@ -278,6 +278,15 @@ describe("Autoboard MCP to browser acceptance", () => {
     await page
       .getByRole("link", { name: "note.txt" })
       .waitFor({ state: "visible" });
+    const createdByAttribution = page
+      .getByText("Created by", { exact: true })
+      .locator("..")
+      .getByLabel("By me via Codex");
+    expect(
+      await createdByAttribution.evaluate(
+        (element) => getComputedStyle(element).textTransform,
+      ),
+    ).toBe("none");
     expect(
       await page
         .locator(
