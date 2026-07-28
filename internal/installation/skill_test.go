@@ -172,7 +172,36 @@ func TestSkillManagerEnsureRefreshesOwnedOutdatedSkill(t *testing.T) {
 	assertSkillMatchesSource(t, source, destination)
 }
 
-func TestSkillManagerEnsureRestoresOwnedSkillWhenReplacementFails(t *testing.T) {
+func TestSkillManagerEnsureRefreshKeepsDestinationInPlaceUntilReplacement(t *testing.T) {
+	source := writeSkillSource(t)
+	destination := filepath.Join(t.TempDir(), "autoboard")
+	copySkillSource(t, destination)
+	writeFile(t, filepath.Join(destination, "SKILL.md"), []byte(validSkillMarkdown()+"\nolder copy\n"))
+	manager := SkillManager{SourceDir: source, DestinationDir: destination}
+
+	originalRename := skillRename
+	t.Cleanup(func() { skillRename = originalRename })
+	skillRename = func(oldPath, newPath string) error {
+		if oldPath == destination {
+			return errors.New("destination must remain in place until replacement")
+		}
+		return originalRename(oldPath, newPath)
+	}
+
+	if _, err := manager.Ensure(); err != nil {
+		t.Fatalf("refresh ensure: %v", err)
+	}
+	assertSkillMatchesSource(t, source, destination)
+	entries, err := os.ReadDir(filepath.Dir(destination))
+	if err != nil {
+		t.Fatalf("read skill parent: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != filepath.Base(destination) {
+		t.Errorf("skill parent entries = %v, want only %q", entries, filepath.Base(destination))
+	}
+}
+
+func TestSkillManagerEnsurePreservesOwnedSkillWhenAtomicExchangeFails(t *testing.T) {
 	source := writeSkillSource(t)
 	destination := filepath.Join(t.TempDir(), "autoboard")
 	copySkillSource(t, destination)
@@ -180,25 +209,20 @@ func TestSkillManagerEnsureRestoresOwnedSkillWhenReplacementFails(t *testing.T) 
 	writeFile(t, filepath.Join(destination, "SKILL.md"), original)
 	manager := SkillManager{SourceDir: source, DestinationDir: destination}
 
-	originalRename := skillRename
-	t.Cleanup(func() { skillRename = originalRename })
-	failReplacement := true
-	skillRename = func(oldPath, newPath string) error {
-		if failReplacement && newPath == destination {
-			failReplacement = false
-			return errors.New("simulated replacement failure")
-		}
-		return originalRename(oldPath, newPath)
+	originalSwap := skillSwapDirectories
+	t.Cleanup(func() { skillSwapDirectories = originalSwap })
+	skillSwapDirectories = func(string, string) error {
+		return errors.New("simulated atomic exchange failure")
 	}
 	if _, err := manager.Ensure(); err == nil {
-		t.Fatal("ensure succeeded, want replacement failure")
+		t.Fatal("ensure succeeded, want atomic exchange failure")
 	}
 	content, err := os.ReadFile(filepath.Join(destination, "SKILL.md"))
 	if err != nil {
-		t.Fatalf("read restored skill: %v", err)
+		t.Fatalf("read preserved skill: %v", err)
 	}
 	if string(content) != string(original) {
-		t.Errorf("restored skill = %q, want %q", content, original)
+		t.Errorf("preserved skill = %q, want %q", content, original)
 	}
 }
 

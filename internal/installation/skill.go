@@ -18,7 +18,10 @@ const (
 	skillURL    = "http://127.0.0.1:4040/mcp"
 )
 
-var skillRename = os.Rename
+var (
+	skillRename          = os.Rename
+	skillSwapDirectories = atomicSwapSkillDirectories
+)
 
 type SkillStatus string
 
@@ -134,22 +137,7 @@ func (m SkillManager) Ensure() (bool, error) {
 		return true, nil
 	}
 
-	backup, err := os.MkdirTemp(filepath.Dir(m.DestinationDir), ".autoboard-skill-backup-")
-	if err != nil {
-		return false, fmt.Errorf("create skill backup path: %w", err)
-	}
-	if err := os.Remove(backup); err != nil {
-		return false, fmt.Errorf("prepare skill backup path: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(backup) }()
-	if err := skillRename(m.DestinationDir, backup); err != nil {
-		return false, fmt.Errorf("stage previous skill: %w", err)
-	}
-	if err := skillRename(stage, m.DestinationDir); err != nil {
-		restoreErr := skillRename(backup, m.DestinationDir)
-		if restoreErr != nil {
-			return false, fmt.Errorf("replace skill: %w; restore previous skill: %w", err, restoreErr)
-		}
+	if err := skillSwapDirectories(stage, m.DestinationDir); err != nil {
 		return false, fmt.Errorf("replace skill: %w", err)
 	}
 	return false, nil
