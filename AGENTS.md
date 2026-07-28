@@ -1,5 +1,6 @@
 # Agent guidance
 
+- Treat functionality changes as cross-surface changes: in the same change, update every affected implementation, MCP tool definition, schema, description, generated or shared contract, Codex plugin, skill, or agent integration, installer or lifecycle path, test, and user, architecture, or operations document. Do not defer known synchronization work to follow-up changes; untouched surfaces must be genuinely unaffected.
 - After changing Prettier-owned JS, TS, TSX, MJS, JSON, CSS, Markdown, YAML, HTML, or SVG source, configuration, or test files, run `corepack pnpm format:prettier`.
 - After changing Go source or tests, run `gofmt`, relevant Go tests, and `just lint-go`.
 - Go coverage must remain at least 80% overall and at least 70% in every first-party package.
