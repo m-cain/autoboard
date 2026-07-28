@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use
 > superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> checkbox syntax for tracking.
 
 **Goal:** Distinguish future manual, explicitly delegated Codex, and
 agent-initiated Autoboard writes across persistence, MCP, generated contracts,
@@ -76,13 +76,13 @@ TypeScript, React, Vitest, Playwright, Just.
 - `Validate` accepts exactly the four pairs in Global Constraints and returns a
   validation-domain error for empty, unknown, or disallowed pairs.
 
-- [ ] **Step 1: Write failing value-object tests**
+- [x] **Step 1: Write failing value-object tests**
 
   Add a table-driven test proving the four valid pairs succeed and every other
   combination of `me`, `codex`, `system`, empty, and an unknown principal
   fails. Assert the returned error is an application validation error.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
   Run:
 
@@ -92,13 +92,13 @@ TypeScript, React, Vitest, Playwright, Just.
 
   Expected: compilation failures caused by the missing attribution API.
 
-- [ ] **Step 3: Implement the minimal value object**
+- [x] **Step 3: Implement the minimal value object**
 
   Add the principals, the attribution struct with schema enums, and validation.
   Do not change mutation signatures, persistence, MCP, or browser contracts in
   this task.
 
-- [ ] **Step 4: Format and verify GREEN**
+- [x] **Step 4: Format and verify GREEN**
 
   Run:
 
@@ -111,7 +111,7 @@ TypeScript, React, Vitest, Playwright, Just.
 
   Expected: all commands pass with coverage thresholds unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add internal/app/attribution.go internal/app/attribution_test.go
@@ -173,7 +173,7 @@ TypeScript, React, Vitest, Playwright, Just.
   browser fixtures so the full repository remains green, but do not add
   attribution presentation in this task.
 
-- [ ] **Step 1: Write failing domain, migration, MCP, and contract tests**
+- [x] **Step 1: Write failing domain, migration, MCP, and contract tests**
 
   Prove project/ticket creation attribution survives reads, comments and
   attachments retain attribution, every mutation event retains attribution,
@@ -186,7 +186,7 @@ TypeScript, React, Vitest, Playwright, Just.
   E2E inputs and assertions through MCP, GET/SSE, restart, and re-read. Assert
   server instructions explain the exact-operation and subagent rules.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
   Run:
 
@@ -199,7 +199,7 @@ TypeScript, React, Vitest, Playwright, Just.
   Expected: compilation or behavior failures because persistence, MCP, and
   generated contracts lack attribution.
 
-- [ ] **Step 3: Implement the vertical attribution boundary**
+- [x] **Step 3: Implement the vertical attribution boundary**
 
   Validate attribution before starting a transaction. Thread it through every
   mutation and activity insert, update schema and row scans, add the required
@@ -208,7 +208,7 @@ TypeScript, React, Vitest, Playwright, Just.
   browser contracts, update existing complete fixtures without rendering the
   new data yet, and satisfy the persistence-focused E2E assertions.
 
-- [ ] **Step 4: Format and verify GREEN**
+- [x] **Step 4: Format and verify GREEN**
 
   Run:
 
@@ -227,7 +227,7 @@ TypeScript, React, Vitest, Playwright, Just.
   Expected: all domain, MCP, generated-contract, browser fixture, and
   repository commit gates pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add internal packages/contracts web test/e2e
@@ -259,13 +259,13 @@ TypeScript, React, Vitest, Playwright, Just.
   creation attribution on cards and ticket details; operation attribution in
   comments, attachment metadata, and activity.
 
-- [ ] **Step 1: Write failing UI tests**
+- [x] **Step 1: Write failing UI tests**
 
   Add component and page tests for all four labels and every required surface,
   using real components rather than attribution mocks. Extend the browser E2E
   assertions to require both `me via Codex` and `Codex`.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
   Run:
 
@@ -276,12 +276,12 @@ TypeScript, React, Vitest, Playwright, Just.
 
   Expected: failures because the UI does not present the available fields.
 
-- [ ] **Step 3: Implement the shared presentation**
+- [x] **Step 3: Implement the shared presentation**
 
   Add the shared attribution presentation and compact metadata styling to every
   required read-only surface. Do not introduce mutation controls.
 
-- [ ] **Step 4: Format and verify GREEN**
+- [x] **Step 4: Format and verify GREEN**
 
   Run:
 
@@ -296,7 +296,7 @@ TypeScript, React, Vitest, Playwright, Just.
   Expected: generated-contract freshness, TypeScript coverage, and UI tests
   pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add web test/e2e
@@ -321,13 +321,13 @@ TypeScript, React, Vitest, Playwright, Just.
   classification rule, and future manual pair without suggesting the browser
   can write.
 
-- [ ] **Step 1: Update user and architecture documentation**
+- [x] **Step 1: Update user and architecture documentation**
 
   Update README, architecture, and Codex configuration guidance with the
   approved semantics and unchanged read-only boundary. Review the design and
   plan documents against the implemented public names and correct any drift.
 
-- [ ] **Step 2: Run documentation formatting**
+- [x] **Step 2: Run documentation formatting**
 
   Run:
 
@@ -338,7 +338,7 @@ TypeScript, React, Vitest, Playwright, Just.
 
   Expected: all Prettier-owned documentation and source remain canonical.
 
-- [ ] **Step 3: Run targeted cross-surface tests**
+- [x] **Step 3: Run targeted cross-surface tests**
 
   Run:
 
@@ -352,7 +352,7 @@ TypeScript, React, Vitest, Playwright, Just.
   Expected: domain, persistence, MCP, contracts, browser, restart, and
   black-box attribution behavior pass.
 
-- [ ] **Step 4: Format and run full verification**
+- [x] **Step 4: Format and run full verification**
 
   Run:
 
@@ -366,7 +366,7 @@ TypeScript, React, Vitest, Playwright, Just.
   Expected: formatting, contract freshness, lint, all coverage policies, race
   tests, production builds, and black-box E2E pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add README.md docs test packages/contracts web internal

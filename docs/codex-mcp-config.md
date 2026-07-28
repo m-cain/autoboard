@@ -22,8 +22,25 @@ registration. `just update-service` rebuilds from the recorded checkout,
 atomically replaces the service, and verifies it.
 
 Autoboard exposes 17 bounded tools and no generic command or SQL escape hatch.
-The server instructions reserve tickets assigned to `me` for the human, direct
-Codex to `list_actionable_tickets`, require fresh reads before
+The six read tools are unchanged. Every one of the eleven write tools requires
+`initiated_by: "me" | "codex"`; it has no default, and `performed_by` is not a
+caller input because MCP always records it as `codex`.
+
+Use `initiated_by: "me"` only for an exact Autoboard mutation the human
+explicitly requested, including an unambiguous follow-up. Do not use it for a
+broad outcome request. If Codex selects the mutation while pursuing a goal, use
+`initiated_by: "codex"`. A subagent retains `me` only when its handoff
+explicitly carries that exact human-requested mutation; otherwise it uses
+`codex`.
+
+The resulting pairs are `codex/me` for an explicitly delegated write and
+`codex/codex` for an agent-selected write. `me/me` is reserved for a future
+manual client and `system/system` for independent daemon work. The browser
+only displays this attribution through its GET and SSE read surfaces; it does
+not provide a write path.
+
+The server instructions also reserve tickets assigned to `me` for the human,
+direct Codex to `list_actionable_tickets`, require fresh reads before
 revision-checked writes, and call for confirmation before broad
 reorganizations, project archival, or dependency removal.
 

@@ -17,7 +17,8 @@ database, or container runtime.
 ## Boundaries
 
 - `internal/app` owns domain rules, optimistic revisions, dependency safety,
-  attachment management, activity, and read models.
+  attachment management, activity, read models, and the validated two-axis
+  `Attribution` value object.
 - `internal/store` opens SQLite with WAL, foreign keys, normal synchronous
   writes, a busy timeout, and embedded Goose migrations.
 - `internal/mcpapi` exposes exactly 17 official-SDK tools with strict input and
@@ -43,3 +44,24 @@ SQLite is canonical. Writes are serialized in-process and committed activity
 rows are the durable SSE replay log. Browser events are invalidation signals;
 the client refetches canonical read models rather than applying event payloads
 locally.
+
+## Write attribution
+
+`Attribution` is a pair of `performed_by` and `initiated_by` principals. The
+only valid pairs are `me/me`, `codex/me`, `codex/codex`, and `system/system`.
+Projects and tickets persist immutable creation attribution as
+`created_attribution`; comments, attachments, and activity events persist
+operation attribution as `attribution`. A single mutation's attribution is
+also used by every derived activity event it causes.
+
+All eleven MCP write tools require `initiated_by: "me" | "codex"`, with no
+default, and the MCP adapter constructs `performed_by: "codex"`. `me` means
+the human explicitly selected that exact Autoboard mutation; a broader outcome
+request, or an operation selected by Codex or its subagent, uses `codex`.
+Subagents retain `me` only when the handoff explicitly carries the exact human
+request. The `me/me` pair is reserved for a future manual client, while
+`system/system` is reserved for independent daemon work.
+
+This attribution data flows through MCP responses, GET APIs, SSE activity, and
+generated browser contracts. It does not change the HTTP boundary: the browser
+remains a GET/HEAD and SSE consumer, and no HTTP mutation route exists.

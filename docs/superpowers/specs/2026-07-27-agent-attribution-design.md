@@ -18,7 +18,7 @@ attribution.
 
 `Principal` has the values `me`, `codex`, and `system`.
 
-`Attribution` contains:
+The public `Attribution` object contains:
 
 - `performed_by`: the principal that executed the write.
 - `initiated_by`: the principal whose intent selected the exact Autoboard
@@ -38,13 +38,16 @@ that operation, including derived dependency activity. `system/system` is
 reserved for independent daemon work.
 
 Projects and tickets expose `created_attribution`. Comments, attachments, and
-activity events expose `attribution`.
+activity events expose `attribution`. These JSON names are carried unchanged
+through MCP output, GET responses, SSE activity, and generated browser
+contracts.
 
 ## MCP behavior
 
 All eleven write tools require `initiated_by` with the value `me` or `codex`.
 There is no default. The MCP server fixes `performed_by` to `codex`; callers
-cannot impersonate a future manual action or the system.
+cannot supply `performed_by` or impersonate a future manual action or the
+system.
 
 Use `initiated_by: "me"` only when the human explicitly requested that exact
 Autoboard mutation, including an unambiguous follow-up to such a request. A
@@ -80,8 +83,8 @@ The read-only UI uses one shared presentation rule:
 - `codex/codex` → `Codex`
 - `system/system` → `system`
 
-Attribution appears on project rows and headers, ticket cards and details,
-comments, attachments, and activity.
+Attribution appears on project rows and board headers, ticket cards and
+details, comments, attachments, and activity.
 
 ## Boundaries
 

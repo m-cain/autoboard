@@ -71,6 +71,26 @@ full-write local interface, protected by peer, Host, and Origin checks rather
 than application credentials. The SQLite database path must remain inside the
 private data directory.
 
+### Write attribution
+
+Every MCP mutation requires `initiated_by`, with no default. The daemon always
+records `performed_by: "codex"`; MCP callers may supply only
+`initiated_by: "me"` for an exact Autoboard operation explicitly requested by
+the human, or `initiated_by: "codex"` when Codex selected the operation while
+pursuing a broader goal. An unambiguous follow-up to an exact request also uses
+`me`; a broad outcome request does not. A subagent preserves `me` only when its
+handoff carries that exact requested operation.
+
+Attribution has two axes and accepts exactly these pairs: `me/me` (a future
+manual human write), `codex/me` (an exact operation delegated to Codex),
+`codex/codex` (an agent-selected operation), and `system/system` (independent
+daemon work). Projects and tickets return immutable `created_attribution`;
+comments, attachments, and activity events return `attribution`.
+
+The browser presents this history but remains read-only. It has no mutation
+routes or write controls: use MCP to create or change board state, then use the
+browser to inspect the canonical GET and SSE read surfaces.
+
 ## Development and verification
 
 Run `just` to see the grouped command list. The common recipes are:
