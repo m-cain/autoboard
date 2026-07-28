@@ -108,5 +108,6 @@ were manual.
 - Every relevant read-only UI surface renders the canonical label.
 - Repository formatting, coverage, lint, pre-commit, race, build, and E2E
   gates pass.
-- The reinstalled production service starts with schema version 1, no projects,
+- After task and whole-branch review, final live acceptance will reinstall and
+  start the production service, then confirm schema version 1, no projects,
   and no activity.
