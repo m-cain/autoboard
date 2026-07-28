@@ -1,0 +1,14 @@
+interface:
+  display_name: "Autoboard"
+  short_description: "Inspect and manage the local Autoboard project board"
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "autoboard"
+      description: "Autoboard local project-board tools"
+      transport: "streamable_http"
+      url: "http://127.0.0.1:4040/mcp"

@@ -40,8 +40,9 @@ just install
 ```
 
 This builds the application, installs and verifies the service, records the
-source checkout for future updates, and registers the exact Streamable HTTP URL
-with Codex. The service starts immediately and on login. Its database,
+source checkout for future updates, and installs both the exact Streamable HTTP
+MCP registration and the personal Autoboard skill. The service starts
+immediately and on login. Its database,
 attachments, binary, installation record, and logs live under
 `~/Library/Application Support/Autoboard`; the LaunchAgent property list lives
 under `~/Library/LaunchAgents`.
@@ -49,8 +50,19 @@ under `~/Library/LaunchAgents`.
 Useful lifecycle commands are `just update-service`, `just service-status`,
 `just restart-service`, `just stop-service`, `just start-service`, and
 `just uninstall-service`. Updates rebuild from the checkout recorded at install
-time. Uninstalling removes the managed binary, LaunchAgent, and matching Codex
-registration but deliberately preserves the database and attachments.
+time. Uninstalling removes the managed binary, LaunchAgent, matching Codex
+registration, and owned personal skill, but deliberately preserves the database
+and attachments. `just update-service` refreshes both Codex integration
+artifacts from the recorded checkout.
+
+The Codex skill refresh and rollback primitive atomically exchanges skill
+directories on macOS and Linux. The install, update, and service lifecycle
+commands documented here remain macOS-only.
+
+Start a new Codex task after installing or updating, then use the canonical
+prompt `$autoboard create ticket in …`. Ordinary Autoboard phrasing also
+activates the skill implicitly. If a new task does not discover the updated
+skill, restart Codex and try again.
 
 See [Codex MCP configuration](docs/codex-mcp-config.md) for client setup.
 
