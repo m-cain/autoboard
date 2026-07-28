@@ -47,6 +47,7 @@ func (CommandRunner) Output(
 type CodexManager struct {
 	Runner     Runner
 	ConfigPath string
+	SkillPath  string
 }
 
 type CodexStatus struct {
@@ -146,6 +147,17 @@ func (m CodexManager) runner() Runner {
 		return m.Runner
 	}
 	return CommandRunner{}
+}
+
+func (m CodexManager) SkillManager(sourceDir string) SkillManager {
+	return SkillManager{
+		SourceDir:      sourceDir,
+		DestinationDir: m.SkillPath,
+	}
+}
+
+func (m CodexManager) RemoveSkill() error {
+	return m.SkillManager("").Remove()
 }
 
 func ensureAutoboardConfig(path string) error {

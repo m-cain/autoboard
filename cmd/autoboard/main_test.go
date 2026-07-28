@@ -38,8 +38,15 @@ func (f *fakeRuntimeManager) Uninstall(context.Context) error {
 }
 
 type fakeCodexRemover struct {
-	err     error
-	removed bool
+	err          error
+	skillErr     error
+	removed      bool
+	skillRemoved bool
+}
+
+func (f *fakeCodexRemover) RemoveSkill() error {
+	f.skillRemoved = true
+	return f.skillErr
 }
 
 func (f *fakeCodexRemover) Remove(context.Context) error {
@@ -221,15 +228,17 @@ func TestUninstallAttemptsRuntimeAndCodexCleanupIndependently(t *testing.T) {
 		context.Background(),
 		runtimeManager,
 		codexManager,
+		codexManager,
 	)
 	if err == nil {
 		t.Fatal("uninstall succeeded, want Codex cleanup failure")
 	}
-	if !runtimeManager.uninstalled || !codexManager.removed {
+	if !runtimeManager.uninstalled || !codexManager.removed || !codexManager.skillRemoved {
 		t.Fatalf(
-			"uninstalled runtime=%v removed Codex=%v, want both true",
+			"uninstalled runtime=%v removed Codex=%v removed skill=%v, want all true",
 			runtimeManager.uninstalled,
 			codexManager.removed,
+			codexManager.skillRemoved,
 		)
 	}
 }
@@ -292,9 +301,11 @@ func TestInstallStatusAndUninstallManagedRuntime(t *testing.T) {
 	launcher := &fakeInstallLauncher{}
 	manager := launchagent.NewManager(paths, 501, launcher)
 	configPath := filepath.Join(home, ".codex", "config.toml")
+	skillPath := filepath.Join(home, ".agents", "skills", "autoboard")
 	codexManager := installation.CodexManager{
 		Runner:     configAwareCodexRunner{configPath: configPath},
 		ConfigPath: configPath,
+		SkillPath:  skillPath,
 	}
 	ctx := context.Background()
 
@@ -324,13 +335,28 @@ func TestInstallStatusAndUninstallManagedRuntime(t *testing.T) {
 		"installed_binary_sha256:",
 		"health: ok",
 		"codex: " + installation.MCPURL,
+		"codex_skill: current (" + skillPath + ")",
 	} {
 		if !strings.Contains(status.String(), fragment) {
 			t.Errorf("status missing %q:\n%s", fragment, status.String())
 		}
 	}
+	if err := os.WriteFile(
+		filepath.Join(skillPath, "SKILL.md"),
+		[]byte("---\nname: autoboard\n---\n<!-- autoboard.codex-integration.v1 -->\nstale\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("make installed skill stale: %v", err)
+	}
+	status.Reset()
+	if err := printStatus(ctx, manager, codexManager, paths, &status); err == nil {
+		t.Fatal("print status succeeded with stale skill")
+	}
+	if !strings.Contains(status.String(), "codex_skill: outdated ("+skillPath+")") {
+		t.Errorf("stale status = %q", status.String())
+	}
 
-	if err := uninstallManagedRuntime(ctx, manager, codexManager); err != nil {
+	if err := uninstallManagedRuntime(ctx, manager, codexManager, codexManager); err != nil {
 		t.Fatalf("uninstall managed runtime: %v", err)
 	}
 	if launcher.loaded {
@@ -340,10 +366,125 @@ func TestInstallStatusAndUninstallManagedRuntime(t *testing.T) {
 		paths.Executable,
 		paths.Plist,
 		paths.InstallRecord,
+		skillPath,
 	} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("managed path %s remains after uninstall: %v", path, err)
 		}
+	}
+}
+
+func TestInstallRefusesConflictingSkillBeforeChangingRuntimeOrCodex(t *testing.T) {
+	checkout, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve checkout: %v", err)
+	}
+	home := t.TempDir()
+	paths := launchagent.PathsForHome(home)
+	sourceExecutable := filepath.Join(t.TempDir(), "autoboard")
+	if err := os.WriteFile(sourceExecutable, []byte("test binary"), 0o700); err != nil {
+		t.Fatalf("write source executable: %v", err)
+	}
+	skillPath := filepath.Join(home, ".agents", "skills", "autoboard")
+	if err := os.MkdirAll(skillPath, 0o700); err != nil {
+		t.Fatalf("create conflicting skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte("someone else's skill\n"), 0o600); err != nil {
+		t.Fatalf("write conflicting skill: %v", err)
+	}
+	launcher := &fakeInstallLauncher{}
+	configPath := filepath.Join(home, ".codex", "config.toml")
+	codexManager := installation.CodexManager{
+		Runner:     configAwareCodexRunner{configPath: configPath},
+		ConfigPath: configPath,
+		SkillPath:  skillPath,
+	}
+
+	err = installRuntime(
+		context.Background(),
+		launchagent.NewManager(paths, 501, launcher),
+		codexManager,
+		paths,
+		sourceExecutable,
+		checkout,
+	)
+	if err == nil || !strings.Contains(err.Error(), "conflicting skill") {
+		t.Fatalf("install error = %v, want conflicting skill refusal", err)
+	}
+	if len(launcher.calls) != 0 {
+		t.Errorf("LaunchAgent calls = %v, want none", launcher.calls)
+	}
+	if _, err := os.Stat(configPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Codex config changed during preflight: %v", err)
+	}
+}
+
+func TestRestoreIntegrationSnapshotsRestoresPreviousArtifacts(t *testing.T) {
+	root := t.TempDir()
+	if _, err := snapshotFile(root); err == nil {
+		t.Fatal("snapshot directory succeeded")
+	}
+	if _, err := snapshotSkill(filepath.Join(root, "not-a-skill")); err != nil {
+		t.Fatalf("snapshot missing skill: %v", err)
+	}
+	configPath := filepath.Join(root, "config.toml")
+	originalConfig := []byte("[model]\nname = \"original\"\n")
+	if err := os.WriteFile(configPath, originalConfig, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	configSnapshot, err := snapshotFile(configPath)
+	if err != nil {
+		t.Fatalf("snapshot config: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte("changed\n"), 0o600); err != nil {
+		t.Fatalf("change config: %v", err)
+	}
+	if err := restoreFile(configPath, configSnapshot); err != nil {
+		t.Fatalf("restore config: %v", err)
+	}
+	if content, err := os.ReadFile(configPath); err != nil || !bytes.Equal(content, originalConfig) {
+		t.Errorf("restored config = %q, %v", content, err)
+	}
+	missingConfigPath := filepath.Join(root, "missing-config.toml")
+	missingConfig, err := snapshotFile(missingConfigPath)
+	if err != nil {
+		t.Fatalf("snapshot missing config: %v", err)
+	}
+	if err := os.WriteFile(missingConfigPath, []byte("changed\n"), 0o600); err != nil {
+		t.Fatalf("write changed missing config: %v", err)
+	}
+	if err := restoreFile(missingConfigPath, missingConfig); err != nil {
+		t.Fatalf("restore absent config: %v", err)
+	}
+	if _, err := os.Stat(missingConfigPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("restored absent config exists: %v", err)
+	}
+
+	skillPath := filepath.Join(root, "skills", "autoboard")
+	writeTestSkill(t, skillPath)
+	skillSnapshot, err := snapshotSkill(skillPath)
+	if err != nil {
+		t.Fatalf("snapshot skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte("changed\n"), 0o600); err != nil {
+		t.Fatalf("change skill: %v", err)
+	}
+	if err := restoreSkill(skillPath, skillSnapshot); err != nil {
+		t.Fatalf("restore skill: %v", err)
+	}
+	if status, err := (installation.SkillManager{
+		SourceDir:      skillPath,
+		DestinationDir: skillPath,
+	}).Status(); err != nil || status != installation.SkillCurrent {
+		t.Errorf("restored skill status = %q, %v", status, err)
+	}
+
+	missingSnapshot, err := snapshotSkill(filepath.Join(root, "missing"))
+	if err != nil {
+		t.Fatalf("snapshot missing skill: %v", err)
+	}
+	if err := restoreSkill(filepath.Join(root, "missing"), missingSnapshot); err != nil {
+		t.Fatalf("restore missing skill: %v", err)
 	}
 }
 
@@ -430,9 +571,19 @@ func TestUpdateRuntimeBuildsRecordedCheckoutAndReinstalls(t *testing.T) {
 	launcher := &fakeInstallLauncher{}
 	manager := launchagent.NewManager(paths, 501, launcher)
 	configPath := filepath.Join(home, ".codex", "config.toml")
+	skillPath := filepath.Join(home, ".agents", "skills", "autoboard")
 	codexManager := installation.CodexManager{
 		Runner:     configAwareCodexRunner{configPath: configPath},
 		ConfigPath: configPath,
+		SkillPath:  skillPath,
+	}
+	writeTestSkill(t, skillPath)
+	if err := os.WriteFile(
+		filepath.Join(skillPath, "SKILL.md"),
+		[]byte("---\nname: autoboard\n---\n<!-- autoboard.codex-integration.v1 -->\nstale\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("make existing skill stale: %v", err)
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -460,6 +611,12 @@ func TestUpdateRuntimeBuildsRecordedCheckoutAndReinstalls(t *testing.T) {
 	}
 	if record.Checkout != checkout || record.BinarySHA256 == "previous" {
 		t.Errorf("updated installation record = %#v", record)
+	}
+	if status, err := (installation.SkillManager{
+		SourceDir:      filepath.Join(checkout, ".agents", "skills", "autoboard"),
+		DestinationDir: skillPath,
+	}).Status(); err != nil || status != installation.SkillCurrent {
+		t.Errorf("updated skill status = %q, %v", status, err)
 	}
 }
 
@@ -540,6 +697,7 @@ func initializeTestCheckout(t *testing.T) string {
 	); err != nil {
 		t.Fatalf("write test go.mod: %v", err)
 	}
+	writeTestSkill(t, filepath.Join(checkout, ".agents", "skills", "autoboard"))
 	for _, arguments := range [][]string{
 		{"init"},
 		{"add", "go.mod"},
@@ -561,6 +719,39 @@ func initializeTestCheckout(t *testing.T) string {
 		}
 	}
 	return checkout
+}
+
+func writeTestSkill(t *testing.T, directory string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(directory, "agents"), 0o700); err != nil {
+		t.Fatalf("create skill directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), []byte(`---
+name: autoboard
+description: Use Autoboard to inspect and manage the local project board.
+---
+
+<!-- autoboard.codex-integration.v1 -->
+`), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "agents", "openai.yaml"), []byte(`interface:
+  display_name: "Autoboard"
+  short_description: "Inspect and manage the local Autoboard project board"
+
+policy:
+  allow_implicit_invocation: true
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "autoboard"
+      description: "Autoboard local project-board tools"
+      transport: "streamable_http"
+      url: "http://127.0.0.1:4040/mcp"
+`), 0o600); err != nil {
+		t.Fatalf("write skill metadata: %v", err)
+	}
 }
 
 func withoutTestGitRepositoryEnvironment(environment []string) []string {

@@ -32,7 +32,10 @@ database, or container runtime.
 - `internal/launchagent` atomically installs the binary and manages one
   per-user macOS LaunchAgent.
 - `internal/installation` owns the recorded-checkout update path, binary
-  fingerprints, and exact Codex registration.
+  fingerprints, exact Codex MCP registration, and ownership-safe installation
+  of the personal Autoboard skill. The lifecycle transaction preflights both
+  Codex artifacts before changing the LaunchAgent, then restores their prior
+  state if a later installation step fails.
 
 The daemon rejects non-loopback peers, unexpected Host values, and unexpected
 origins across every route. Development mode adds only the two Vite loopback

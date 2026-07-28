@@ -118,6 +118,7 @@ func runLifecycle(command string, stdout io.Writer, stderr io.Writer) int {
 	}
 	codexManager := installation.CodexManager{
 		ConfigPath: filepath.Join(codexHome, "config.toml"),
+		SkillPath:  filepath.Join(home, ".agents", "skills", "autoboard"),
 	}
 	ctx := context.Background()
 	switch command {
@@ -145,7 +146,7 @@ func runLifecycle(command string, stdout io.Writer, stderr io.Writer) int {
 			stderr,
 		)
 	case "uninstall":
-		err = uninstallManagedRuntime(ctx, manager, codexManager)
+		err = uninstallManagedRuntime(ctx, manager, codexManager, codexManager)
 	case "start":
 		err = manager.Start(ctx)
 		if err == nil {
@@ -187,20 +188,29 @@ type codexRemover interface {
 	Remove(context.Context) error
 }
 
+type skillRemover interface {
+	RemoveSkill() error
+}
+
 func uninstallManagedRuntime(
 	ctx context.Context,
 	runtimeManager runtimeUninstaller,
 	codexManager codexRemover,
+	skillManager skillRemover,
 ) error {
 	runtimeErr := runtimeManager.Uninstall(ctx)
 	codexErr := codexManager.Remove(ctx)
+	skillErr := skillManager.RemoveSkill()
 	if runtimeErr != nil {
 		runtimeErr = fmt.Errorf("remove managed runtime: %w", runtimeErr)
 	}
 	if codexErr != nil {
 		codexErr = fmt.Errorf("remove Codex registration: %w", codexErr)
 	}
-	return errors.Join(runtimeErr, codexErr)
+	if skillErr != nil {
+		skillErr = fmt.Errorf("remove Codex skill: %w", skillErr)
+	}
+	return errors.Join(runtimeErr, codexErr, skillErr)
 }
 
 type launchAgentState interface {
@@ -269,6 +279,20 @@ func installRuntime(
 	if _, err := codexManager.Validate(ctx); err != nil {
 		return err
 	}
+	skillManager := codexManager.SkillManager(
+		filepath.Join(checkout, ".agents", "skills", "autoboard"),
+	)
+	if err := skillManager.Validate(); err != nil {
+		return err
+	}
+	configSnapshot, err := snapshotFile(codexManager.ConfigPath)
+	if err != nil {
+		return err
+	}
+	skillSnapshot, err := snapshotSkill(codexManager.SkillPath)
+	if err != nil {
+		return err
+	}
 	record, err := installation.NewRecord(
 		ctx,
 		checkout,
@@ -278,7 +302,7 @@ func installRuntime(
 	if err != nil {
 		return err
 	}
-	addedCodexRegistration := false
+	integrationChanged := false
 	err = manager.InstallVerified(
 		ctx,
 		sourceExecutable,
@@ -286,25 +310,110 @@ func installRuntime(
 			if _, err := verifyEndpoint(ctx); err != nil {
 				return err
 			}
-			added, err := codexManager.Ensure(ctx)
+			_, err := codexManager.Ensure(ctx)
 			if err != nil {
 				return err
 			}
-			addedCodexRegistration = added
+			integrationChanged = true
+			_, err = skillManager.Ensure()
+			if err != nil {
+				return err
+			}
 			if err := installation.WriteRecord(paths.InstallRecord, record); err != nil {
-				if added {
-					_ = codexManager.Remove(ctx)
-					addedCodexRegistration = false
-				}
 				return err
 			}
 			return nil
 		},
 	)
-	if err != nil && addedCodexRegistration {
-		_ = codexManager.Remove(ctx)
+	if err != nil && integrationChanged {
+		err = errors.Join(
+			err,
+			restoreFile(codexManager.ConfigPath, configSnapshot),
+			restoreSkill(codexManager.SkillPath, skillSnapshot),
+		)
 	}
 	return err
+}
+
+type fileSnapshot struct {
+	exists  bool
+	mode    os.FileMode
+	content []byte
+}
+
+type skillSnapshot struct {
+	exists   bool
+	skill    fileSnapshot
+	metadata fileSnapshot
+}
+
+func snapshotFile(path string) (fileSnapshot, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return fileSnapshot{}, nil
+	}
+	if err != nil {
+		return fileSnapshot{}, fmt.Errorf("snapshot %s: %w", path, err)
+	}
+	if info.IsDir() {
+		return fileSnapshot{}, fmt.Errorf("snapshot %s: path is a directory", path)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fileSnapshot{}, fmt.Errorf("snapshot %s: %w", path, err)
+	}
+	return fileSnapshot{exists: true, mode: info.Mode(), content: content}, nil
+}
+
+func restoreFile(path string, snapshot fileSnapshot) error {
+	if !snapshot.exists {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("restore absent %s: %w", path, err)
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("restore parent for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, snapshot.content, snapshot.mode); err != nil {
+		return fmt.Errorf("restore %s: %w", path, err)
+	}
+	return nil
+}
+
+func snapshotSkill(directory string) (skillSnapshot, error) {
+	info, err := os.Lstat(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return skillSnapshot{}, nil
+	}
+	if err != nil {
+		return skillSnapshot{}, fmt.Errorf("snapshot installed skill: %w", err)
+	}
+	if !info.IsDir() {
+		return skillSnapshot{}, errors.New("snapshot installed skill: path is not a directory")
+	}
+	skill, err := snapshotFile(filepath.Join(directory, "SKILL.md"))
+	if err != nil {
+		return skillSnapshot{}, err
+	}
+	metadata, err := snapshotFile(filepath.Join(directory, "agents", "openai.yaml"))
+	if err != nil {
+		return skillSnapshot{}, err
+	}
+	return skillSnapshot{exists: true, skill: skill, metadata: metadata}, nil
+}
+
+func restoreSkill(directory string, snapshot skillSnapshot) error {
+	if err := os.RemoveAll(directory); err != nil {
+		return fmt.Errorf("restore installed skill: %w", err)
+	}
+	if !snapshot.exists {
+		return nil
+	}
+	if err := restoreFile(filepath.Join(directory, "SKILL.md"), snapshot.skill); err != nil {
+		return err
+	}
+	return restoreFile(filepath.Join(directory, "agents", "openai.yaml"), snapshot.metadata)
 }
 
 func updateRuntime(
@@ -465,6 +574,19 @@ func printStatus(
 		}
 		fmt.Fprintf(output, "recorded_binary_sha256: %s\n", record.BinarySHA256)
 		fmt.Fprintf(output, "version: %s\n", record.Version)
+		skillStatus, skillErr := codexManager.SkillManager(
+			filepath.Join(record.Checkout, ".agents", "skills", "autoboard"),
+		).Status()
+		switch {
+		case skillErr != nil:
+			fmt.Fprintf(output, "codex_skill: unavailable (%v)\n", skillErr)
+			failures = append(failures, skillErr)
+		case skillStatus != installation.SkillCurrent:
+			fmt.Fprintf(output, "codex_skill: %s (%s)\n", skillStatus, codexManager.SkillPath)
+			failures = append(failures, fmt.Errorf("autoboard Codex skill is %s", skillStatus))
+		default:
+			fmt.Fprintf(output, "codex_skill: current (%s)\n", codexManager.SkillPath)
+		}
 	}
 	fmt.Fprintf(output, "data_directory: %s\n", paths.DataDir)
 	fmt.Fprintf(output, "binary: %s\n", paths.Executable)

@@ -6,8 +6,9 @@ Install the local daemon first:
 just install
 ```
 
-The installer registers its Streamable HTTP endpoint and narrowly adds these
-settings to the generated Autoboard table:
+The installer registers its Streamable HTTP endpoint, narrowly adds these
+settings to the generated Autoboard table, and copies the personal Autoboard
+skill to `~/.agents/skills/autoboard`:
 
 ```toml
 [mcp_servers.autoboard]
@@ -16,10 +17,14 @@ default_tools_approval_mode = "writes"
 required = false
 ```
 
-Open a new Codex task after installation. `just service-status` reports launchd
-state, fingerprints, paths, health, schema/MCP readiness, and the exact Codex
-registration. `just update-service` rebuilds from the recorded checkout,
-atomically replaces the service, and verifies it.
+Open a new Codex task after installation or `just update-service`, then use
+`$autoboard create ticket in …`. Ordinary Autoboard phrasing also invokes the
+skill implicitly. If task discovery does not refresh, restart Codex as a
+fallback. `just service-status` reports launchd state, fingerprints, paths,
+health, schema/MCP readiness, the exact Codex registration, and whether the
+personal skill is current. `just update-service` rebuilds from the recorded
+checkout, atomically replaces the service, refreshes both Codex integration
+artifacts, and verifies it.
 
 Autoboard exposes 17 bounded tools and no generic command or SQL escape hatch.
 The server instructions reserve tickets assigned to `me` for the human, direct
