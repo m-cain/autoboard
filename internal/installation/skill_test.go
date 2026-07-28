@@ -2,8 +2,10 @@ package installation
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -111,6 +113,26 @@ func TestSkillManagerStatusReportsSkillStates(t *testing.T) {
 				if err := os.Symlink(target, filepath.Join(destination, "agents")); err != nil {
 					t.Fatalf("make intermediate symlink: %v", err)
 				}
+			},
+			want: SkillConflicting,
+		},
+		"conflicting socket metadata": {
+			setup: func(t *testing.T, destination string) {
+				t.Helper()
+				if runtime.GOOS == "windows" {
+					t.Skip("Unix-domain sockets are unavailable on Windows")
+				}
+				copySkillSource(t, destination)
+				metadataPath := filepath.Join(destination, "agents", "openai.yaml")
+				if err := os.Remove(metadataPath); err != nil {
+					t.Fatalf("remove destination metadata: %v", err)
+				}
+				t.Chdir(destination)
+				listener, err := net.Listen("unix", filepath.Join("agents", "openai.yaml"))
+				if err != nil {
+					t.Fatalf("listen on metadata socket: %v", err)
+				}
+				t.Cleanup(func() { _ = listener.Close() })
 			},
 			want: SkillConflicting,
 		},

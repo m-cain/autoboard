@@ -286,7 +286,7 @@ func readSkillFile(directory, relativePath string) ([]byte, error) {
 		if index < len(components)-1 && !info.IsDir() {
 			return nil, fmt.Errorf("skill file %s has a non-directory path component", relativePath)
 		}
-		if index == len(components)-1 && info.IsDir() {
+		if index == len(components)-1 && !info.Mode().IsRegular() {
 			return nil, fmt.Errorf("skill file %s is not a regular file", relativePath)
 		}
 	}
@@ -294,7 +294,7 @@ func readSkillFile(directory, relativePath string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read skill file %s: %w", relativePath, err)
 	}
-	if info.Mode()&fs.ModeSymlink != 0 || info.IsDir() {
+	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("skill file %s is not a regular file", relativePath)
 	}
 	content, err := os.ReadFile(path)
@@ -319,7 +319,7 @@ func hasUnsafeSkillPath(directory string) (bool, error) {
 			}
 			if info.Mode()&fs.ModeSymlink != 0 ||
 				(index < len(components)-1 && !info.IsDir()) ||
-				(index == len(components)-1 && info.IsDir()) {
+				(index == len(components)-1 && !info.Mode().IsRegular()) {
 				return true, nil
 			}
 		}
