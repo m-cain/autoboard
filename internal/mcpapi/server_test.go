@@ -268,6 +268,18 @@ func TestEveryWriteToolRejectsInvalidInitiatorWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	third, err := service.CreateTicket(ctx, attr, app.CreateTicketInput{ProjectID: project.ID, Title: "Third"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fourth, err := service.CreateTicket(ctx, attr, app.CreateTicketInput{ProjectID: project.ID, Title: "Fourth"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err = service.AddDependency(ctx, attr, third.ID, fourth.ID, third.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
 	archived, err := service.CreateProject(ctx, attr, app.CreateProjectInput{Key: "ARCH", Name: "Archived"})
 	if err != nil {
 		t.Fatal(err)
@@ -291,15 +303,15 @@ func TestEveryWriteToolRejectsInvalidInitiatorWithoutMutation(t *testing.T) {
 		"add_comment":              {"ticket_id": first.ID, "body": "Comment"},
 		"add_attachment_from_path": {"ticket_id": first.ID, "path": source},
 		"add_dependency":           {"blocked_ticket_id": first.ID, "blocker_ticket_id": second.ID, "expected_revision": first.Revision},
-		"remove_dependency":        {"blocked_ticket_id": first.ID, "blocker_ticket_id": second.ID, "expected_revision": first.Revision},
+		"remove_dependency":        {"blocked_ticket_id": third.ID, "blocker_ticket_id": fourth.ID, "expected_revision": third.Revision},
 	}
 	for name, valid := range arguments {
-		before, err := mutationSnapshot(t, service, ctx, first.ID)
+		before, err := mutationSnapshot(t, service, ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, invalid := range []map[string]any{
-			{}, {"initiated_by": "system"}, {"initiated_by": "unknown"}, {"initiated_by": 1},
+			{}, {"initiated_by": "system"}, {"initiated_by": "unknown"}, {"initiated_by": 1}, {"unexpected": true},
 		} {
 			args := maps.Clone(valid)
 			maps.Copy(args, invalid)
@@ -310,7 +322,7 @@ func TestEveryWriteToolRejectsInvalidInitiatorWithoutMutation(t *testing.T) {
 			if !result.IsError {
 				t.Errorf("%s accepted invalid initiator %#v", name, invalid)
 			}
-			after, err := mutationSnapshot(t, service, ctx, first.ID)
+			after, err := mutationSnapshot(t, service, ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -321,26 +333,30 @@ func TestEveryWriteToolRejectsInvalidInitiatorWithoutMutation(t *testing.T) {
 	}
 }
 
-func mutationSnapshot(t *testing.T, service *app.Service, ctx context.Context, id string) ([]byte, error) {
+func mutationSnapshot(t *testing.T, service *app.Service, ctx context.Context) ([]byte, error) {
 	t.Helper()
+	tickets, err := service.SearchTickets(ctx, "", "", 100)
+	if err != nil {
+		return nil, err
+	}
+	details := make([]app.TicketDetail, 0, len(tickets))
+	for _, ticket := range tickets {
+		detail, err := service.GetTicketDetail(ctx, ticket.ID)
+		if err != nil {
+			return nil, err
+		}
+		details = append(details, detail)
+	}
 	return json.Marshal(struct {
 		Projects app.ProjectList     `json:"projects"`
-		Ticket   app.TicketDetail    `json:"ticket"`
+		Tickets  []app.TicketDetail  `json:"tickets"`
 		Activity []app.ActivityEvent `json:"activity"`
-	}{mustProjects(t, service, ctx), mustTicket(t, service, ctx, id), mustActivity(t, service, ctx)})
+	}{mustProjects(t, service, ctx), details, mustActivity(t, service, ctx)})
 }
 
 func mustProjects(t *testing.T, service *app.Service, ctx context.Context) app.ProjectList {
 	t.Helper()
 	value, err := service.ListProjects(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value
-}
-func mustTicket(t *testing.T, service *app.Service, ctx context.Context, id string) app.TicketDetail {
-	t.Helper()
-	value, err := service.GetTicketDetail(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
