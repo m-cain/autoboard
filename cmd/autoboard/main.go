@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -293,6 +294,7 @@ func installRuntime(
 	if err != nil {
 		return err
 	}
+	defer func() { _ = os.RemoveAll(skillSnapshot.backup) }()
 	record, err := installation.NewRecord(
 		ctx,
 		checkout,
@@ -302,7 +304,7 @@ func installRuntime(
 	if err != nil {
 		return err
 	}
-	integrationChanged := false
+	integrationAttempted := false
 	err = manager.InstallVerified(
 		ctx,
 		sourceExecutable,
@@ -310,11 +312,11 @@ func installRuntime(
 			if _, err := verifyEndpoint(ctx); err != nil {
 				return err
 			}
+			integrationAttempted = true
 			_, err := codexManager.Ensure(ctx)
 			if err != nil {
 				return err
 			}
-			integrationChanged = true
 			_, err = skillManager.Ensure()
 			if err != nil {
 				return err
@@ -325,7 +327,7 @@ func installRuntime(
 			return nil
 		},
 	)
-	if err != nil && integrationChanged {
+	if err != nil && integrationAttempted {
 		err = errors.Join(
 			err,
 			restoreFile(codexManager.ConfigPath, configSnapshot),
@@ -342,9 +344,8 @@ type fileSnapshot struct {
 }
 
 type skillSnapshot struct {
-	exists   bool
-	skill    fileSnapshot
-	metadata fileSnapshot
+	exists bool
+	backup string
 }
 
 func snapshotFile(path string) (fileSnapshot, error) {
@@ -392,28 +393,94 @@ func snapshotSkill(directory string) (skillSnapshot, error) {
 	if !info.IsDir() {
 		return skillSnapshot{}, errors.New("snapshot installed skill: path is not a directory")
 	}
-	skill, err := snapshotFile(filepath.Join(directory, "SKILL.md"))
+	backup, err := os.MkdirTemp(filepath.Dir(directory), ".autoboard-skill-rollback-")
 	if err != nil {
+		return skillSnapshot{}, fmt.Errorf("create installed skill snapshot: %w", err)
+	}
+	if err := copyDirectory(directory, backup); err != nil {
+		_ = os.RemoveAll(backup)
 		return skillSnapshot{}, err
 	}
-	metadata, err := snapshotFile(filepath.Join(directory, "agents", "openai.yaml"))
-	if err != nil {
-		return skillSnapshot{}, err
-	}
-	return skillSnapshot{exists: true, skill: skill, metadata: metadata}, nil
+	return skillSnapshot{exists: true, backup: backup}, nil
 }
 
 func restoreSkill(directory string, snapshot skillSnapshot) error {
-	if err := os.RemoveAll(directory); err != nil {
-		return fmt.Errorf("restore installed skill: %w", err)
-	}
 	if !snapshot.exists {
+		if err := os.RemoveAll(directory); err != nil {
+			return fmt.Errorf("restore installed skill: %w", err)
+		}
 		return nil
 	}
-	if err := restoreFile(filepath.Join(directory, "SKILL.md"), snapshot.skill); err != nil {
-		return err
+	discarded, err := os.MkdirTemp(filepath.Dir(directory), ".autoboard-skill-discard-")
+	if err != nil {
+		return fmt.Errorf("prepare installed skill rollback: %w", err)
 	}
-	return restoreFile(filepath.Join(directory, "agents", "openai.yaml"), snapshot.metadata)
+	if err := os.Remove(discarded); err != nil {
+		return fmt.Errorf("prepare installed skill rollback: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(discarded) }()
+	if err := os.Rename(directory, discarded); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stage changed installed skill: %w", err)
+	}
+	if err := os.Rename(snapshot.backup, directory); err != nil {
+		if restoreErr := os.Rename(discarded, directory); restoreErr != nil {
+			return fmt.Errorf("restore installed skill: %w; restore changed skill: %w", err, restoreErr)
+		}
+		return fmt.Errorf("restore installed skill: %w", err)
+	}
+	return nil
+}
+
+func copyDirectory(source string, destination string) error {
+	sourceRoot, err := os.OpenRoot(source)
+	if err != nil {
+		return fmt.Errorf("open installed skill source: %w", err)
+	}
+	defer func() { _ = sourceRoot.Close() }()
+	destinationRoot, err := os.OpenRoot(destination)
+	if err != nil {
+		return fmt.Errorf("open installed skill snapshot: %w", err)
+	}
+	defer func() { _ = destinationRoot.Close() }()
+	return fs.WalkDir(sourceRoot.FS(), ".", func(relativePath string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if relativePath == "." {
+			return nil
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			linkTarget, err := sourceRoot.Readlink(relativePath)
+			if err != nil {
+				return fmt.Errorf("read installed skill symlink: %w", err)
+			}
+			if err := destinationRoot.Symlink(linkTarget, relativePath); err != nil {
+				return fmt.Errorf("copy installed skill symlink: %w", err)
+			}
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("inspect installed skill entry: %w", err)
+		}
+		if entry.IsDir() {
+			if err := destinationRoot.MkdirAll(relativePath, info.Mode().Perm()); err != nil {
+				return fmt.Errorf("copy installed skill directory: %w", err)
+			}
+			return nil
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("copy installed skill entry %s: unsupported file type", relativePath)
+		}
+		content, err := sourceRoot.ReadFile(relativePath)
+		if err != nil {
+			return fmt.Errorf("read installed skill file: %w", err)
+		}
+		if err := destinationRoot.WriteFile(relativePath, content, info.Mode().Perm()); err != nil {
+			return fmt.Errorf("copy installed skill file: %w", err)
+		}
+		return nil
+	})
 }
 
 func updateRuntime(

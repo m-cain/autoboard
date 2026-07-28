@@ -92,6 +92,16 @@ type configAwareCodexRunner struct {
 	configPath string
 }
 
+type unreadableCodexRunner struct{}
+
+func (unreadableCodexRunner) Output(
+	context.Context,
+	string,
+	...string,
+) ([]byte, error) {
+	return []byte("[]"), nil
+}
+
 func (r configAwareCodexRunner) Output(
 	_ context.Context,
 	_ string,
@@ -419,6 +429,106 @@ func TestInstallRefusesConflictingSkillBeforeChangingRuntimeOrCodex(t *testing.T
 	}
 }
 
+func TestInstallRestoresCodexConfigWhenRegistrationReadBackFails(t *testing.T) {
+	stopEndpoint := startEndpoint(t)
+	defer stopEndpoint()
+	checkout, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve checkout: %v", err)
+	}
+	home := t.TempDir()
+	paths := launchagent.PathsForHome(home)
+	sourceExecutable := filepath.Join(t.TempDir(), "autoboard")
+	if err := os.WriteFile(sourceExecutable, []byte("test binary"), 0o700); err != nil {
+		t.Fatalf("write source executable: %v", err)
+	}
+	configPath := filepath.Join(home, ".codex", "config.toml")
+	originalConfig := []byte("[model]\nname = \"original\"\n")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatalf("create config directory: %v", err)
+	}
+	if err := os.WriteFile(configPath, originalConfig, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	codexManager := installation.CodexManager{
+		Runner:     unreadableCodexRunner{},
+		ConfigPath: configPath,
+		SkillPath:  filepath.Join(home, ".agents", "skills", "autoboard"),
+	}
+
+	err = installRuntime(
+		context.Background(),
+		launchagent.NewManager(paths, 501, &fakeInstallLauncher{}),
+		codexManager,
+		paths,
+		sourceExecutable,
+		checkout,
+	)
+	if err == nil || !strings.Contains(err.Error(), "did not read back") {
+		t.Fatalf("install error = %v, want Codex read-back failure", err)
+	}
+	if content, readErr := os.ReadFile(configPath); readErr != nil || !bytes.Equal(content, originalConfig) {
+		t.Errorf("restored config = %q, %v", content, readErr)
+	}
+}
+
+func TestInstallRollbackPreservesExtraOwnedSkillFiles(t *testing.T) {
+	stopEndpoint := startEndpoint(t)
+	defer stopEndpoint()
+	checkout, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve checkout: %v", err)
+	}
+	home := t.TempDir()
+	paths := launchagent.PathsForHome(home)
+	if err := os.MkdirAll(paths.InstallRecord, 0o700); err != nil {
+		t.Fatalf("make installation record unwritable: %v", err)
+	}
+	sourceExecutable := filepath.Join(t.TempDir(), "autoboard")
+	if err := os.WriteFile(sourceExecutable, []byte("test binary"), 0o700); err != nil {
+		t.Fatalf("write source executable: %v", err)
+	}
+	skillPath := filepath.Join(home, ".agents", "skills", "autoboard")
+	writeTestSkill(t, skillPath)
+	if err := os.WriteFile(filepath.Join(skillPath, "extra.txt"), []byte("preserve me\n"), 0o600); err != nil {
+		t.Fatalf("write extra skill file: %v", err)
+	}
+	if err := os.Symlink("extra.txt", filepath.Join(skillPath, "extra-link")); err != nil {
+		t.Fatalf("link extra skill file: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillPath, "SKILL.md"),
+		[]byte("---\nname: autoboard\n---\n<!-- autoboard.codex-integration.v1 -->\nstale\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("make skill stale: %v", err)
+	}
+	configPath := filepath.Join(home, ".codex", "config.toml")
+	codexManager := installation.CodexManager{
+		Runner:     configAwareCodexRunner{configPath: configPath},
+		ConfigPath: configPath,
+		SkillPath:  skillPath,
+	}
+
+	err = installRuntime(
+		context.Background(),
+		launchagent.NewManager(paths, 501, &fakeInstallLauncher{}),
+		codexManager,
+		paths,
+		sourceExecutable,
+		checkout,
+	)
+	if err == nil || !strings.Contains(err.Error(), "write installation record") {
+		t.Fatalf("install error = %v, want installation record failure", err)
+	}
+	if content, readErr := os.ReadFile(filepath.Join(skillPath, "extra.txt")); readErr != nil || string(content) != "preserve me\n" {
+		t.Errorf("extra skill file after rollback = %q, %v", content, readErr)
+	}
+	if target, readErr := os.Readlink(filepath.Join(skillPath, "extra-link")); readErr != nil || target != "extra.txt" {
+		t.Errorf("extra skill link after rollback = %q, %v", target, readErr)
+	}
+}
+
 func TestRestoreIntegrationSnapshotsRestoresPreviousArtifacts(t *testing.T) {
 	root := t.TempDir()
 	if _, err := snapshotFile(root); err == nil {
@@ -426,6 +536,16 @@ func TestRestoreIntegrationSnapshotsRestoresPreviousArtifacts(t *testing.T) {
 	}
 	if _, err := snapshotSkill(filepath.Join(root, "not-a-skill")); err != nil {
 		t.Fatalf("snapshot missing skill: %v", err)
+	}
+	if err := copyDirectory(filepath.Join(root, "missing-source"), filepath.Join(root, "missing-destination")); err == nil {
+		t.Fatal("copy missing skill directory succeeded")
+	}
+	notDirectory := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(notDirectory, []byte("file\n"), 0o600); err != nil {
+		t.Fatalf("write non-directory: %v", err)
+	}
+	if err := copyDirectory(root, notDirectory); err == nil {
+		t.Fatal("copy into file succeeded")
 	}
 	configPath := filepath.Join(root, "config.toml")
 	originalConfig := []byte("[model]\nname = \"original\"\n")
