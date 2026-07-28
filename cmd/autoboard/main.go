@@ -411,21 +411,10 @@ func restoreSkill(directory string, snapshot skillSnapshot) error {
 		}
 		return nil
 	}
-	discarded, err := os.MkdirTemp(filepath.Dir(directory), ".autoboard-skill-discard-")
-	if err != nil {
-		return fmt.Errorf("prepare installed skill rollback: %w", err)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return fmt.Errorf("restore installed skill directory: %w", err)
 	}
-	if err := os.Remove(discarded); err != nil {
-		return fmt.Errorf("prepare installed skill rollback: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(discarded) }()
-	if err := os.Rename(directory, discarded); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("stage changed installed skill: %w", err)
-	}
-	if err := os.Rename(snapshot.backup, directory); err != nil {
-		if restoreErr := os.Rename(discarded, directory); restoreErr != nil {
-			return fmt.Errorf("restore installed skill: %w; restore changed skill: %w", err, restoreErr)
-		}
+	if err := copyDirectory(snapshot.backup, directory); err != nil {
 		return fmt.Errorf("restore installed skill: %w", err)
 	}
 	return nil

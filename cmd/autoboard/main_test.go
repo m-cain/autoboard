@@ -589,6 +589,9 @@ func TestRestoreIntegrationSnapshotsRestoresPreviousArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillPath, "SKILL.md"), []byte("changed\n"), 0o600); err != nil {
 		t.Fatalf("change skill: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(skillPath, "concurrent.txt"), []byte("keep me\n"), 0o600); err != nil {
+		t.Fatalf("write concurrent skill file: %v", err)
+	}
 	if err := restoreSkill(skillPath, skillSnapshot); err != nil {
 		t.Fatalf("restore skill: %v", err)
 	}
@@ -597,6 +600,9 @@ func TestRestoreIntegrationSnapshotsRestoresPreviousArtifacts(t *testing.T) {
 		DestinationDir: skillPath,
 	}).Status(); err != nil || status != installation.SkillCurrent {
 		t.Errorf("restored skill status = %q, %v", status, err)
+	}
+	if content, err := os.ReadFile(filepath.Join(skillPath, "concurrent.txt")); err != nil || string(content) != "keep me\n" {
+		t.Errorf("concurrent skill file after restore = %q, %v", content, err)
 	}
 
 	missingSnapshot, err := snapshotSkill(filepath.Join(root, "missing"))
