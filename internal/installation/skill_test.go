@@ -63,6 +63,16 @@ func TestSkillManagerStatusReportsSkillStates(t *testing.T) {
 			},
 			want: SkillOutdated,
 		},
+		"marker owned skill missing canonical metadata": {
+			setup: func(t *testing.T, destination string) {
+				t.Helper()
+				copySkillSource(t, destination)
+				if err := os.Remove(filepath.Join(destination, "agents", "openai.yaml")); err != nil {
+					t.Fatalf("remove destination metadata: %v", err)
+				}
+			},
+			want: SkillOutdated,
+		},
 		"conflicting file": {
 			setup: func(t *testing.T, destination string) {
 				t.Helper()
@@ -85,6 +95,21 @@ func TestSkillManagerStatusReportsSkillStates(t *testing.T) {
 				t.Helper()
 				if err := os.Symlink(t.TempDir(), destination); err != nil {
 					t.Fatalf("make symlink: %v", err)
+				}
+			},
+			want: SkillConflicting,
+		},
+		"conflicting intermediate symlink": {
+			setup: func(t *testing.T, destination string) {
+				t.Helper()
+				copySkillSource(t, destination)
+				if err := os.RemoveAll(filepath.Join(destination, "agents")); err != nil {
+					t.Fatalf("remove destination agents directory: %v", err)
+				}
+				target := filepath.Join(t.TempDir(), "agents")
+				writeFile(t, filepath.Join(target, "openai.yaml"), []byte(validOpenAIYAML("autoboard")))
+				if err := os.Symlink(target, filepath.Join(destination, "agents")); err != nil {
+					t.Fatalf("make intermediate symlink: %v", err)
 				}
 			},
 			want: SkillConflicting,
@@ -191,6 +216,20 @@ func TestSkillManagerRemoveIsOwnershipSafeAndIdempotent(t *testing.T) {
 		manager := SkillManager{SourceDir: source, DestinationDir: destination}
 		if err := manager.Remove(); err != nil {
 			t.Fatalf("remove owned skill: %v", err)
+		}
+		if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("removed destination lstat error = %v, want not exist", err)
+		}
+	})
+	t.Run("owned skill with unavailable source", func(t *testing.T) {
+		destination := filepath.Join(t.TempDir(), "autoboard")
+		copySkillSource(t, destination)
+		manager := SkillManager{
+			SourceDir:      filepath.Join(t.TempDir(), "missing-source"),
+			DestinationDir: destination,
+		}
+		if err := manager.Remove(); err != nil {
+			t.Fatalf("remove owned skill with unavailable source: %v", err)
 		}
 		if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("removed destination lstat error = %v, want not exist", err)

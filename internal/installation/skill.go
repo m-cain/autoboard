@@ -71,6 +71,13 @@ func (m SkillManager) Status() (SkillStatus, error) {
 	if !owned {
 		return SkillConflicting, nil
 	}
+	conflicting, err := hasUnsafeSkillPath(m.DestinationDir)
+	if err != nil {
+		return "", err
+	}
+	if conflicting {
+		return SkillConflicting, nil
+	}
 	current, err := m.matchesSource()
 	if err != nil {
 		return "", err
@@ -149,16 +156,22 @@ func (m SkillManager) Ensure() (bool, error) {
 }
 
 func (m SkillManager) Remove() error {
-	status, err := m.Status()
+	info, err := os.Lstat(m.DestinationDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect installed skill: %w", err)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("refuse to remove conflicting skill destination %q", m.DestinationDir)
+	}
+	owned, err := skillDirectoryOwned(m.DestinationDir)
 	if err != nil {
 		return err
 	}
-	switch status {
-	case SkillMissing:
-		return nil
-	case SkillConflicting:
+	if !owned {
 		return fmt.Errorf("refuse to remove conflicting skill destination %q", m.DestinationDir)
-	case SkillCurrent, SkillOutdated:
 	}
 	if err := os.RemoveAll(m.DestinationDir); err != nil {
 		return fmt.Errorf("remove installed skill: %w", err)
@@ -264,7 +277,31 @@ func hasStandaloneMarker(content []byte) bool {
 }
 
 func readSkillFile(directory, relativePath string) ([]byte, error) {
-	path := filepath.Join(directory, relativePath)
+	directoryInfo, err := os.Lstat(directory)
+	if err != nil {
+		return nil, fmt.Errorf("inspect skill directory: %w", err)
+	}
+	if directoryInfo.Mode()&fs.ModeSymlink != 0 || !directoryInfo.IsDir() {
+		return nil, errors.New("skill directory is not a real directory")
+	}
+	path := directory
+	components := strings.Split(relativePath, string(filepath.Separator))
+	for index, component := range components {
+		path = filepath.Join(path, component)
+		info, err := os.Lstat(path)
+		if err != nil {
+			return nil, fmt.Errorf("read skill file %s: %w", relativePath, err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return nil, fmt.Errorf("skill file %s has a symlinked path component", relativePath)
+		}
+		if index < len(components)-1 && !info.IsDir() {
+			return nil, fmt.Errorf("skill file %s has a non-directory path component", relativePath)
+		}
+		if index == len(components)-1 && info.IsDir() {
+			return nil, fmt.Errorf("skill file %s is not a regular file", relativePath)
+		}
+	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("read skill file %s: %w", relativePath, err)
@@ -277,6 +314,29 @@ func readSkillFile(directory, relativePath string) ([]byte, error) {
 		return nil, fmt.Errorf("read skill file %s: %w", relativePath, err)
 	}
 	return content, nil
+}
+
+func hasUnsafeSkillPath(directory string) (bool, error) {
+	for _, relativePath := range []string{"SKILL.md", filepath.Join("agents", "openai.yaml")} {
+		path := directory
+		components := strings.Split(relativePath, string(filepath.Separator))
+		for index, component := range components {
+			path = filepath.Join(path, component)
+			info, err := os.Lstat(path)
+			if errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			if err != nil {
+				return false, fmt.Errorf("inspect installed skill file %s: %w", relativePath, err)
+			}
+			if info.Mode()&fs.ModeSymlink != 0 ||
+				(index < len(components)-1 && !info.IsDir()) ||
+				(index == len(components)-1 && info.IsDir()) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func copySkillFiles(source, destination string) error {
