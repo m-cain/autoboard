@@ -96,6 +96,15 @@ func TestAttributionConstraintsRejectInvalidPairsInEveryAttributedTable(t *testi
 		t.Fatalf("valid ticket: %v", err)
 	}
 	for _, statement := range []string{
+		`INSERT INTO comments (id,ticket_id,project_id,body,performed_by,initiated_by,inserted_at) VALUES ('valid-comment','t','p','body','codex','me','now')`,
+		`INSERT INTO attachments (id,ticket_id,project_id,original_filename,media_type,byte_size,sha256,managed_path,performed_by,initiated_by,inserted_at) VALUES ('valid-attachment','t','p','a','text/plain',0,'x','/valid','system','system','now')`,
+		`INSERT INTO activity_events (event_type,performed_by,initiated_by,project_id,payload,inserted_at) VALUES ('valid','me','me','p','{}','now')`,
+	} {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatalf("valid attributed insert: %v", err)
+		}
+	}
+	for _, statement := range []string{
 		`INSERT INTO projects (id,key,name,created_performed_by,created_initiated_by,inserted_at,updated_at) VALUES ('badp','BADP','Bad','me','codex','now','now')`,
 		`INSERT INTO tickets (id,project_id,number,title,created_performed_by,created_initiated_by,inserted_at,updated_at) VALUES ('badt','p',2,'Bad','system','me','now','now')`,
 		`INSERT INTO comments (id,ticket_id,project_id,body,performed_by,initiated_by,inserted_at) VALUES ('c','t','p','body','me','codex','now')`,

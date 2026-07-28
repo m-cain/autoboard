@@ -3,6 +3,7 @@ package mcpapi_test
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -254,30 +255,104 @@ func TestEveryWriteToolRejectsInvalidInitiatorWithoutMutation(t *testing.T) {
 	service := openService(t)
 	session := connect(t, service)
 	ctx := context.Background()
-	writeTools := toolNames[6:]
-	for _, name := range writeTools {
+	attr := app.Attribution{PerformedBy: app.PrincipalCodex, InitiatedBy: app.PrincipalMe}
+	project, err := service.CreateProject(ctx, attr, app.CreateProjectInput{Key: "BASE", Name: "Base"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.CreateTicket(ctx, attr, app.CreateTicketInput{ProjectID: project.ID, Title: "First", Status: app.TicketReady})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.CreateTicket(ctx, attr, app.CreateTicketInput{ProjectID: project.ID, Title: "Second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := service.CreateProject(ctx, attr, app.CreateProjectInput{Key: "ARCH", Name: "Archived"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err = service.ArchiveProject(ctx, attr, archived.ID, archived.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "note.txt")
+	if err := os.WriteFile(source, []byte("note"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	arguments := map[string]map[string]any{
+		"create_project":           {"key": "NEWP", "name": "New"},
+		"update_project":           {"project_id": project.ID, "expected_revision": project.Revision, "name": "Renamed"},
+		"archive_project":          {"project_id": project.ID, "expected_revision": project.Revision},
+		"restore_project":          {"project_id": archived.ID, "expected_revision": archived.Revision},
+		"create_ticket":            {"project_id": project.ID, "title": "Created"},
+		"update_ticket":            {"ticket_id": first.ID, "expected_revision": first.Revision, "title": "Updated"},
+		"transition_ticket":        {"ticket_id": first.ID, "expected_revision": first.Revision, "status": "done"},
+		"add_comment":              {"ticket_id": first.ID, "body": "Comment"},
+		"add_attachment_from_path": {"ticket_id": first.ID, "path": source},
+		"add_dependency":           {"blocked_ticket_id": first.ID, "blocker_ticket_id": second.ID, "expected_revision": first.Revision},
+		"remove_dependency":        {"blocked_ticket_id": first.ID, "blocker_ticket_id": second.ID, "expected_revision": first.Revision},
+	}
+	for name, valid := range arguments {
+		before, err := mutationSnapshot(t, service, ctx, first.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, invalid := range []map[string]any{
-			{},
-			{"initiated_by": "system"},
-			{"initiated_by": "unknown"},
-			{"initiated_by": "me", "unexpected": true},
+			{}, {"initiated_by": "system"}, {"initiated_by": "unknown"}, {"initiated_by": 1},
 		} {
-			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: invalid})
+			args := maps.Clone(valid)
+			maps.Copy(args, invalid)
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 			if err != nil {
 				t.Fatalf("%s call: %v", name, err)
 			}
 			if !result.IsError {
 				t.Errorf("%s accepted invalid initiator %#v", name, invalid)
 			}
+			after, err := mutationSnapshot(t, service, ctx, first.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(before) != string(after) {
+				t.Errorf("%s mutated state for %#v", name, invalid)
+			}
 		}
 	}
-	projects, err := service.ListProjects(ctx)
+}
+
+func mutationSnapshot(t *testing.T, service *app.Service, ctx context.Context, id string) ([]byte, error) {
+	t.Helper()
+	return json.Marshal(struct {
+		Projects app.ProjectList     `json:"projects"`
+		Ticket   app.TicketDetail    `json:"ticket"`
+		Activity []app.ActivityEvent `json:"activity"`
+	}{mustProjects(t, service, ctx), mustTicket(t, service, ctx, id), mustActivity(t, service, ctx)})
+}
+
+func mustProjects(t *testing.T, service *app.Service, ctx context.Context) app.ProjectList {
+	t.Helper()
+	value, err := service.ListProjects(ctx)
 	if err != nil {
-		t.Fatalf("list projects: %v", err)
+		t.Fatal(err)
 	}
-	if len(projects.Active)+len(projects.Archived) != 0 {
-		t.Errorf("invalid writes mutated projects: %#v", projects)
+	return value
+}
+func mustTicket(t *testing.T, service *app.Service, ctx context.Context, id string) app.TicketDetail {
+	t.Helper()
+	value, err := service.GetTicketDetail(ctx, id)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return value
+}
+func mustActivity(t *testing.T, service *app.Service, ctx context.Context) []app.ActivityEvent {
+	t.Helper()
+	value, err := service.ListActivityAfter(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
 }
 
 func openService(t *testing.T) *app.Service {
