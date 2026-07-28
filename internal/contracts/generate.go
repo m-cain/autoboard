@@ -45,6 +45,7 @@ func Documents() (map[string][]byte, error) {
 		if err := json.Unmarshal(encoded, &raw); err != nil {
 			return nil, fmt.Errorf("decode %s for draft conversion: %w", name, err)
 		}
+		addAttributionPairConstraint(raw)
 		document, err := json.MarshalIndent(draft7Schema(raw), "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("encode %s: %w", name, err)
@@ -52,6 +53,41 @@ func Documents() (map[string][]byte, error) {
 		documents[name] = append(document, '\n')
 	}
 	return documents, nil
+}
+
+func addAttributionPairConstraint(value any) {
+	switch typed := value.(type) {
+	case []any:
+		for _, nested := range typed {
+			addAttributionPairConstraint(nested)
+		}
+	case map[string]any:
+		if properties, ok := typed["properties"].(map[string]any); ok &&
+			properties["performed_by"] != nil && properties["initiated_by"] != nil {
+			typed["oneOf"] = []any{
+				attributionPair("me", "me"),
+				attributionPair("codex", "me"),
+				attributionPair("codex", "codex"),
+				attributionPair("system", "system"),
+			}
+			return
+		}
+		for _, nested := range typed {
+			addAttributionPairConstraint(nested)
+		}
+	}
+}
+
+func attributionPair(performedBy string, initiatedBy string) map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"required":             []any{"performed_by", "initiated_by"},
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"performed_by": map[string]any{"enum": []any{performedBy}},
+			"initiated_by": map[string]any{"enum": []any{initiatedBy}},
+		},
+	}
 }
 
 func draft7Schema(value any) any {

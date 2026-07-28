@@ -69,7 +69,6 @@ describe("Go-generated browser contracts", () => {
       id: 1,
       event_type: "project.created",
       attribution: { performed_by: "codex", initiated_by: "me" },
-      attribution: { performed_by: "codex", initiated_by: "me" },
       project_id: "11111111-1111-4111-8111-111111111111",
       ticket_id: null,
       payload: {},
@@ -142,7 +141,6 @@ describe("Go-generated browser contracts", () => {
           project_id: project.id,
           body: "Covered",
           attribution: { performed_by: "codex", initiated_by: "me" },
-          attribution: { performed_by: "codex", initiated_by: "me" },
           inserted_at: "2026-07-25T12:00:00Z",
         },
       ],
@@ -156,7 +154,6 @@ describe("Go-generated browser contracts", () => {
           byte_size: 7,
           sha256: "a".repeat(64),
           attribution: { performed_by: "system", initiated_by: "system" },
-          attribution: { performed_by: "system", initiated_by: "system" },
           inserted_at: "2026-07-25T12:00:00Z",
         },
       ],
@@ -164,7 +161,6 @@ describe("Go-generated browser contracts", () => {
         {
           id: 1,
           event_type: "ticket.created",
-          attribution: { performed_by: "codex", initiated_by: "me" },
           attribution: { performed_by: "codex", initiated_by: "me" },
           project_id: project.id,
           ticket_id: ticket.id,
@@ -192,6 +188,39 @@ describe("Go-generated browser contracts", () => {
         activity: [{ ...detail.activity[0], payload: [] }],
       }),
     ).toThrow(/must be an object/);
+  });
+
+  it("rejects missing, unknown, and impossible attribution output pairs", () => {
+    const event = {
+      id: 1,
+      event_type: "project.created",
+      attribution: { performed_by: "codex", initiated_by: "me" },
+      project_id: project.id,
+      ticket_id: null,
+      payload: {},
+      inserted_at: "2026-07-25T12:00:00Z",
+    };
+    const invalid = [
+      { ...event, attribution: undefined },
+      {
+        ...event,
+        attribution: { performed_by: "unknown", initiated_by: "me" },
+      },
+      { ...event, attribution: { performed_by: "me", initiated_by: "codex" } },
+      { ...event, attribution: { performed_by: "me", initiated_by: "system" } },
+      {
+        ...event,
+        attribution: { performed_by: "codex", initiated_by: "system" },
+      },
+      { ...event, attribution: { performed_by: "system", initiated_by: "me" } },
+      {
+        ...event,
+        attribution: { performed_by: "system", initiated_by: "codex" },
+      },
+    ];
+    for (const output of invalid) {
+      expect(() => decodeBrowserActivityEvent(output)).toThrow();
+    }
   });
 
   it("rejects impossible calendar components", () => {

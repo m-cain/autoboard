@@ -250,6 +250,36 @@ func TestToolErrorsAreRepairableAndInvalidInputNeverMutates(t *testing.T) {
 	}
 }
 
+func TestEveryWriteToolRejectsInvalidInitiatorWithoutMutation(t *testing.T) {
+	service := openService(t)
+	session := connect(t, service)
+	ctx := context.Background()
+	writeTools := toolNames[6:]
+	for _, name := range writeTools {
+		for _, invalid := range []map[string]any{
+			{},
+			{"initiated_by": "system"},
+			{"initiated_by": "unknown"},
+			{"initiated_by": "me", "unexpected": true},
+		} {
+			result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: invalid})
+			if err != nil {
+				t.Fatalf("%s call: %v", name, err)
+			}
+			if !result.IsError {
+				t.Errorf("%s accepted invalid initiator %#v", name, invalid)
+			}
+		}
+	}
+	projects, err := service.ListProjects(ctx)
+	if err != nil {
+		t.Fatalf("list projects: %v", err)
+	}
+	if len(projects.Active)+len(projects.Archived) != 0 {
+		t.Errorf("invalid writes mutated projects: %#v", projects)
+	}
+}
+
 func openService(t *testing.T) *app.Service {
 	t.Helper()
 	root := t.TempDir()

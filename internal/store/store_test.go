@@ -81,3 +81,29 @@ func TestOpenAppliesSQLiteOperatingRulesAndMigrations(t *testing.T) {
 		)
 	}
 }
+
+func TestAttributionConstraintsRejectInvalidPairsInEveryAttributedTable(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "autoboard.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.ExecContext(ctx, `INSERT INTO projects (id,key,name,created_performed_by,created_initiated_by,inserted_at,updated_at) VALUES ('p','PROJ','Project','codex','me','now','now')`); err != nil {
+		t.Fatalf("valid project: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO tickets (id,project_id,number,title,created_performed_by,created_initiated_by,inserted_at,updated_at) VALUES ('t','p',1,'Ticket','codex','codex','now','now')`); err != nil {
+		t.Fatalf("valid ticket: %v", err)
+	}
+	for _, statement := range []string{
+		`INSERT INTO projects (id,key,name,created_performed_by,created_initiated_by,inserted_at,updated_at) VALUES ('badp','BADP','Bad','me','codex','now','now')`,
+		`INSERT INTO tickets (id,project_id,number,title,created_performed_by,created_initiated_by,inserted_at,updated_at) VALUES ('badt','p',2,'Bad','system','me','now','now')`,
+		`INSERT INTO comments (id,ticket_id,project_id,body,performed_by,initiated_by,inserted_at) VALUES ('c','t','p','body','me','codex','now')`,
+		`INSERT INTO attachments (id,ticket_id,project_id,original_filename,media_type,byte_size,sha256,managed_path,performed_by,initiated_by,inserted_at) VALUES ('a','t','p','a','text/plain',0,'x','/a','codex','system','now')`,
+		`INSERT INTO activity_events (event_type,performed_by,initiated_by,project_id,payload,inserted_at) VALUES ('x','system','codex','p','{}','now')`,
+	} {
+		if _, err := db.ExecContext(ctx, statement); err == nil {
+			t.Errorf("invalid attribution insert succeeded: %s", statement)
+		}
+	}
+}

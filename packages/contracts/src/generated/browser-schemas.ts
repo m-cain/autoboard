@@ -56,6 +56,88 @@ export const ActivityEventSchema = {
     },
     "Attribution": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "me"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "codex"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "system"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "system"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        }
+      ],
       "properties": {
         "initiated_by": {
           "enum": [
@@ -89,6 +171,88 @@ export const ProjectBoardSchema = {
   "definitions": {
     "Attribution": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "me"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "codex"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "system"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "system"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        }
+      ],
       "properties": {
         "initiated_by": {
           "enum": [
@@ -372,6 +536,88 @@ export const ProjectListSchema = {
   "definitions": {
     "Attribution": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "me"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "codex"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "system"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "system"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        }
+      ],
       "properties": {
         "initiated_by": {
           "enum": [
@@ -584,6 +830,88 @@ export const TicketDetailSchema = {
     },
     "Attribution": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "me"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "codex"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "system"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "system"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        }
+      ],
       "properties": {
         "initiated_by": {
           "enum": [
@@ -1027,6 +1355,88 @@ export const TicketListSchema = {
   "definitions": {
     "Attribution": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "me"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "me"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "codex"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "codex"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "initiated_by": {
+              "enum": [
+                "system"
+              ]
+            },
+            "performed_by": {
+              "enum": [
+                "system"
+              ]
+            }
+          },
+          "required": [
+            "performed_by",
+            "initiated_by"
+          ],
+          "type": "object"
+        }
+      ],
       "properties": {
         "initiated_by": {
           "enum": [
