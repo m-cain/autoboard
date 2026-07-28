@@ -11,7 +11,7 @@ development actions.
 and verification to the repository's existing Just recipes, keeping lifecycle
 logic in one place.
 
-**Tech Stack:** Codex local-environment TOML, Just, Node.js test runner
+**Tech Stack:** Codex local-environment TOML, Just
 
 ## Global Constraints
 
@@ -34,7 +34,8 @@ logic in one place.
 **Files:**
 
 - Create: `.codex/environments/environment.toml`
-- Modify: `test/developer-workflow.test.mjs`
+- Modify:
+  `docs/superpowers/plans/2026-07-27-codex-worktree-environment.md`
 
 **Interfaces:**
 
@@ -42,53 +43,13 @@ logic in one place.
 - Produces: A version 1 Codex local environment selected by default for new
   managed worktrees.
 
-- [ ] **Step 1: Write the failing environment-contract test**
+No repository test is added for the TOML source text. The configuration is
+consumed by Codex rather than first-party production code, and an exact-text
+assertion would be a change detector rather than a behavioral test. Validation
+instead parses the complete schema and executes the delegated repository
+commands in a clean worktree.
 
-Append this test to `test/developer-workflow.test.mjs`:
-
-```js
-test("Codex worktrees use the canonical local environment", async () => {
-  const environment = await readFile(
-    resolve(root, ".codex/environments/environment.toml"),
-    "utf8",
-  );
-
-  assert.equal(
-    environment,
-    `version = 1
-name = "Autoboard"
-
-[setup]
-script = "just setup"
-
-[[actions]]
-name = "Dev"
-icon = "run"
-command = "just dev"
-
-[[actions]]
-name = "Verify"
-icon = "test"
-command = "just verify"
-`,
-  );
-});
-```
-
-- [ ] **Step 2: Run the contract test and verify it fails**
-
-Run:
-
-```sh
-node --test --test-name-pattern \
-  "Codex worktrees use the canonical local environment" \
-  test/developer-workflow.test.mjs
-```
-
-Expected: FAIL with `ENOENT` for
-`.codex/environments/environment.toml`.
-
-- [ ] **Step 3: Add the minimal environment configuration**
+- [ ] **Step 1: Add the minimal environment configuration**
 
 Create `.codex/environments/environment.toml`:
 
@@ -110,19 +71,7 @@ icon = "test"
 command = "just verify"
 ```
 
-- [ ] **Step 4: Run the contract test and verify it passes**
-
-Run:
-
-```sh
-node --test --test-name-pattern \
-  "Codex worktrees use the canonical local environment" \
-  test/developer-workflow.test.mjs
-```
-
-Expected: one matching test passes and all non-matching tests are skipped.
-
-- [ ] **Step 5: Validate TOML syntax and schema values**
+- [ ] **Step 2: Validate TOML syntax and schema values**
 
 Run:
 
@@ -132,7 +81,7 @@ python3 -c 'import pathlib, tomllib; p = pathlib.Path(".codex/environments/envir
 
 Expected: exit code 0 with no output.
 
-- [ ] **Step 6: Bootstrap the fresh worktree**
+- [ ] **Step 3: Bootstrap the fresh worktree**
 
 Run:
 
@@ -143,20 +92,31 @@ just setup
 Expected: pnpm dependencies, Git hooks, Go modules, the pinned Go linter, and
 Playwright Chromium are available with exit code 0.
 
-- [ ] **Step 7: Format and run the focused workflow tests**
+- [ ] **Step 4: Validate the configured actions**
+
+Run:
+
+```sh
+just --dry-run dev
+just --dry-run verify
+```
+
+Expected: `Dev` resolves to the contract build plus the development supervisor,
+and `Verify` resolves to the complete handoff gate.
+
+- [ ] **Step 5: Format and check the changed files**
 
 Run:
 
 ```sh
 corepack pnpm format:prettier
-node --test test/developer-workflow.test.mjs
 corepack pnpm format:check
+git diff --check
 ```
 
-Expected: formatting is unchanged after the write, seven workflow tests pass,
-and the format check exits 0.
+Expected: formatting is unchanged after the write and both checks exit 0.
 
-- [ ] **Step 8: Run the complete handoff gate**
+- [ ] **Step 6: Run the complete handoff gate**
 
 Temporarily stop the installed Autoboard service so its port does not conflict
 with lifecycle tests, use an exit trap to restore it, and run:
@@ -171,7 +131,7 @@ just verify
 Expected: `just verify` exits 0, including coverage, race tests, production
 build, and the Playwright black-box scenario; the exit trap restarts Autoboard.
 
-- [ ] **Step 9: Confirm the service and diff**
+- [ ] **Step 7: Confirm the service and diff**
 
 Run:
 
@@ -182,9 +142,9 @@ git status --short
 ```
 
 Expected: Autoboard reports `health: ok`, the diff check exits 0, and only the
-environment file, workflow test, and this implementation plan are in scope.
+environment file and this corrected implementation plan are in scope.
 
-- [ ] **Step 10: Commit the implementation**
+- [ ] **Step 8: Commit the implementation**
 
 Run the commit with the installed service temporarily stopped so the Husky
 pre-commit gate can bind its lifecycle-test port:
@@ -192,7 +152,7 @@ pre-commit gate can bind its lifecycle-test port:
 ```sh
 set -e
 git add .codex/environments/environment.toml \
-  test/developer-workflow.test.mjs
+  docs/superpowers/plans/2026-07-27-codex-worktree-environment.md
 just stop-service
 trap 'just start-service' EXIT
 git commit -m "chore: configure Codex worktree environment"

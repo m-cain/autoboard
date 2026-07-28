@@ -1,0 +1,15 @@
+version = 1
+name = "Autoboard"
+
+[setup]
+script = "just setup"
+
+[[actions]]
+name = "Dev"
+icon = "run"
+command = "just dev"
+
+[[actions]]
+name = "Verify"
+icon = "test"
+command = "just verify"
